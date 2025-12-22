@@ -1,0 +1,5 @@
+{
+  "name": "Arcade Shooter Engine",
+  "description": "A systems-based arcade shooter game engine with React UI and Canvas rendering.",
+  "requestFramePermissions": []
+}
