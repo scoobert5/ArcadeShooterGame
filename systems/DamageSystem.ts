@@ -1,8 +1,8 @@
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
-import { EntityType, EnemyEntity, EnemyVariant, ProjectileEntity } from '../entities/types';
+import { EntityType, EnemyEntity, EnemyVariant, ProjectileEntity, ParticleEntity } from '../entities/types';
 import { Vec2 } from '../utils/math';
-import { PROJECTILE_SPEED, PROJECTILE_LIFETIME, Colors } from '../utils/constants';
+import { Colors } from '../utils/constants';
 
 export class DamageSystem implements System {
   update(dt: number, state: GameState) {
@@ -31,7 +31,7 @@ export class DamageSystem implements System {
           this.handleRicochet(state, projectile, enemy);
       }
 
-      // Projectile is destroyed on impact (the ricochet creates a NEW projectile)
+      // Projectile is destroyed on impact
       projectile.active = false;
 
       // Check Death
@@ -88,54 +88,79 @@ export class DamageSystem implements System {
   }
 
   private handleRicochet(state: GameState, projectile: ProjectileEntity, hitEnemy: EnemyEntity) {
-      const candidates = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
-      let closest: EnemyEntity | null = null;
-      let minDst = 300; // Search Radius
+      let currentSource = hitEnemy;
+      let currentDamage = projectile.damage;
+      let bounces = projectile.bouncesRemaining;
+      
+      // Initialize hit history with the enemy we just hit
+      const hitIds = [...projectile.hitEntityIds, hitEnemy.id];
 
-      for (const cand of candidates) {
-          // Conditions:
-          // 1. Must be active
-          // 2. Must NOT be the enemy we just hit
-          // 3. Must NOT have been hit by this projectile chain before (strict chaining)
-          if (
-              !cand.active || 
-              cand === hitEnemy || 
-              projectile.hitEntityIds.includes(cand.id)
-          ) continue;
+      // Instant Chain Loop
+      while (bounces > 0) {
+          // Find nearest valid target
+          const candidates = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
+          let closest: EnemyEntity | null = null;
+          let minDst = Infinity;
 
-          const d = Vec2.dist(hitEnemy.position, cand.position);
-          if (d < minDst) {
-              minDst = d;
-              closest = cand;
+          for (const cand of candidates) {
+              // Conditions:
+              // 1. Must be active (alive)
+              // 2. Must NOT have been hit by this chain already (avoids A->B->A loops)
+              if (!cand.active || hitIds.includes(cand.id)) continue;
+
+              const d = Vec2.dist(currentSource.position, cand.position);
+              if (d < minDst) {
+                  minDst = d;
+                  closest = cand;
+              }
           }
-      }
 
-      if (closest) {
-          // Create the bounce projectile
-          const dir = Vec2.normalize(Vec2.sub(closest.position, hitEnemy.position));
-          const angle = Math.atan2(dir.y, dir.x);
+          // If no valid target found, stop chaining
+          if (!closest) break;
+
+          // --- Process the Chain Hit ---
           
-          // Damage Decay: 20% reduction per bounce
+          // 1. Calculate Decay Damage
           const decayFactor = 0.8;
+          currentDamage = Math.ceil(currentDamage * decayFactor);
+          
+          // 2. Apply Damage
+          let appliedDamage = currentDamage;
+          if (closest.variant === EnemyVariant.Tank) {
+              appliedDamage *= 0.6;
+          }
+          closest.health -= appliedDamage;
+          closest.hitFlashTimer = 0.1;
 
-          const bounceProj: ProjectileEntity = {
-              id: `proj_bounce_${Date.now()}_${Math.random()}`,
-              type: EntityType.Projectile,
-              position: { x: hitEnemy.position.x, y: hitEnemy.position.y }, // Start from hit location
-              velocity: Vec2.scale(dir, PROJECTILE_SPEED),
-              radius: projectile.radius,
-              rotation: angle,
+          // 3. Create Visual Trail (Particle)
+          const particle: ParticleEntity = {
+              id: `part_rico_${Date.now()}_${Math.random()}`,
+              type: EntityType.Particle,
+              style: 'ricochet_trail',
+              position: { ...currentSource.position }, // Satisfy BaseEntity interface
+              velocity: { x: 0, y: 0 },
+              radius: 0,
+              rotation: 0,
               color: Colors.Projectile,
               active: true,
-              damage: Math.ceil(projectile.damage * decayFactor), // Apply decay
-              lifetime: PROJECTILE_LIFETIME, // Reset lifetime for the new leg
-              ownerId: projectile.ownerId,
-              bouncesRemaining: projectile.bouncesRemaining - 1,
-              // Propagate the history
-              hitEntityIds: [...projectile.hitEntityIds, hitEnemy.id] 
+              from: { ...currentSource.position },
+              to: { ...closest.position },
+              lifetime: 0.25, // 250ms fade
+              maxLifetime: 0.25,
+              width: 3 // Slightly thicker for visibility
           };
-          
-          state.entityManager.add(bounceProj);
+          state.entityManager.add(particle);
+
+          // 4. Check Death
+          if (closest.health <= 0) {
+              closest.active = false;
+              state.score += closest.value;
+          }
+
+          // 5. Prepare for Next Loop
+          hitIds.push(closest.id);
+          currentSource = closest;
+          bounces--;
       }
   }
 }

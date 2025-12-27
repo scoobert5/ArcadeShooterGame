@@ -39,9 +39,14 @@ export class WaveSystem implements System {
   public prepareNextWave(state: GameState) {
     state.wave++;
     
-    // Budget: Base 10 + 3 per wave
-    // Wave 1: 13, Wave 5: 25, Wave 10: 40
-    state.enemiesRemainingInWave = Math.floor(10 + (state.wave * 3));
+    // Budget: Tripled for higher density (Requested 200% increase)
+    // Original formula: 12 + (state.wave * 4)
+    // New formula: (12 + (state.wave * 4)) * 3
+    // Wave 1: 16 -> 48
+    // Wave 5: 32 -> 96
+    // Wave 10: 52 -> 156
+    const baseBudget = 12 + (state.wave * 4);
+    state.enemiesRemainingInWave = Math.floor(baseBudget * 3);
     
     // Difficulty Multiplier: 
     // - 5% increase per wave starting AFTER wave 1

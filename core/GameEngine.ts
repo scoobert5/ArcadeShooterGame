@@ -15,7 +15,7 @@ import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { WaveSystem } from '../systems/WaveSystem';
 
-type GameEventType = 'score_change' | 'game_over' | 'wave_change' | 'wave_progress' | 'level_up' | 'player_health_change' | 'enemy_hit' | 'status_change' | 'wave_intro_timer';
+type GameEventType = 'score_change' | 'game_over' | 'wave_change' | 'wave_progress' | 'player_health_change' | 'enemy_hit' | 'status_change' | 'wave_intro_timer';
 type GameEventListener = (data?: any) => void;
 
 /**
@@ -38,7 +38,6 @@ export class GameEngine {
   
   private lastPlayerHealth: number = 100;
   private wasEscapePressed: boolean = false;
-  private wasShopPressed: boolean = false;
   private lastEnemiesRemaining: number = -1;
 
   constructor() {
@@ -80,6 +79,18 @@ export class GameEngine {
     this.loop.stop();
     this.listeners.clear();
   }
+  
+  resize(width: number, height: number) {
+      this.state.worldWidth = width;
+      this.state.worldHeight = height;
+      
+      // If player is out of bounds after resize, clamp them
+      if (this.state.player) {
+          const p = this.state.player;
+          p.position.x = Math.max(p.radius, Math.min(width - p.radius, p.position.x));
+          p.position.y = Math.max(p.radius, Math.min(height - p.radius, p.position.y));
+      }
+  }
 
   startGame() {
     this.state.reset();
@@ -89,7 +100,7 @@ export class GameEngine {
     const player: PlayerEntity = {
       id: 'player',
       type: EntityType.Player,
-      position: { x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 },
+      position: { x: this.state.worldWidth / 2, y: this.state.worldHeight / 2 },
       velocity: { x: 0, y: 0 },
       radius: PLAYER_RADIUS,
       rotation: 0,
@@ -152,13 +163,11 @@ export class GameEngine {
   }
 
   togglePause() {
-    // Allow pausing if Playing OR LevelUp (Upgrade Menu)
-    if (this.state.status === GameStatus.Playing || this.state.status === GameStatus.LevelUp || this.state.status === GameStatus.WaveIntro) {
+    // Allow pausing if Playing OR WaveIntro
+    if (this.state.status === GameStatus.Playing || this.state.status === GameStatus.WaveIntro) {
       this.state.previousStatus = this.state.status;
       this.state.status = GameStatus.Paused;
       this.inputManager.reset(); // Prevent stuck keys
-      // We do NOT stop the loop, we just stop processing systems in update()
-      // This allows us to keep checking input for resume
       this.emit('status_change', this.state.status);
     } else if (this.state.status === GameStatus.Paused) {
       this.state.status = this.state.previousStatus;
@@ -167,22 +176,14 @@ export class GameEngine {
     }
   }
 
-  toggleShop() {
-    // Only allow opening shop if NO active enemies or during Wave Intro
-    // Simple check: waveActive is false (during intro or cleared)
-    if (!this.state.waveActive || this.state.status === GameStatus.WaveIntro) {
-        if (this.state.status === GameStatus.Shop) {
-            // Close Shop -> Return to Previous (usually WaveIntro)
-            this.state.status = this.state.previousStatus;
-            this.inputManager.reset();
-            this.emit('status_change', this.state.status);
-        } else if (this.state.status === GameStatus.WaveIntro || this.state.status === GameStatus.Playing) { // Allow opening from Intro or Playing (if safe)
-            this.state.previousStatus = this.state.status;
-            this.state.status = GameStatus.Shop;
-            this.inputManager.reset();
-            this.emit('status_change', this.state.status);
-        }
-    }
+  /**
+   * Closes the shop and starts the next wave.
+   */
+  closeShop() {
+      if (this.state.status !== GameStatus.Shop) return;
+      
+      this.startWaveIntro();
+      this.inputManager.reset();
   }
 
   resumeGame() {
@@ -209,49 +210,16 @@ export class GameEngine {
       this.state.waveIntroTimer = 3.0;
       this.state.waveActive = false; // Wave System should not check clear condition
       
+      // Auto-Fill Ammo Loop Fix
+      if (this.state.player) {
+          this.state.player.currentAmmo = this.state.player.maxAmmo;
+          this.state.player.isReloading = false;
+          this.state.player.reloadTimer = 0;
+      }
+      
       this.emit('status_change', this.state.status);
       this.emit('wave_change', this.state.wave);
       this.emit('wave_intro_timer', 3);
-  }
-
-  /**
-   * Applies a selected upgrade and resumes the game.
-   * Call this from the UI when a user selects an option.
-   */
-  selectUpgrade(upgradeId: string) {
-    if (this.state.status !== GameStatus.LevelUp) return;
-
-    // Verify validity against options (security check)
-    const isValidOption = this.state.upgradeOptions.some(u => u.id === upgradeId);
-    if (!isValidOption) {
-      console.warn("Attempted to select an invalid upgrade option");
-      return;
-    }
-
-    const success = this.upgradeSystem.applyUpgrade(this.state, upgradeId);
-    
-    if (success) {
-      // Clear options
-      this.state.upgradeOptions = [];
-
-      // Clear projectiles for clean slate next wave
-      this.state.entityManager.removeByType(EntityType.Projectile);
-      
-      // Prepare next wave stats
-      this.waveSystem.prepareNextWave(this.state);
-      
-      // Go to Intro
-      this.startWaveIntro();
-      
-      // Reset input
-      this.inputManager.reset();
-
-      // Emit health update if upgrade changed maxHealth/health (Vitality)
-      if (this.state.player) {
-         this.emit('player_health_change', { current: this.state.player.health, max: this.state.player.maxHealth });
-         this.lastPlayerHealth = this.state.player.health;
-      }
-    }
   }
 
   /**
@@ -278,7 +246,7 @@ export class GameEngine {
    * Called by the Loop class every animation frame.
    */
   private update(dt: number) {
-    // 1. Always process global input (Pause & Shop)
+    // 1. Always process global input (Pause)
     const input = this.inputManager.getState();
     
     // Edge Detection for Escape Key
@@ -286,12 +254,6 @@ export class GameEngine {
       this.togglePause();
     }
     this.wasEscapePressed = input.escape;
-
-    // Edge Detection for Shop Key (U)
-    if (input.shop && !this.wasShopPressed) {
-        this.toggleShop();
-    }
-    this.wasShopPressed = input.shop;
 
     // 2. Special State: Wave Intro (Countdown)
     if (this.state.status === GameStatus.WaveIntro) {
@@ -314,7 +276,6 @@ export class GameEngine {
     }
 
     // 3. Guard: Only update game logic if Playing
-    // Paused, Menu, GameOver, LevelUp, Shop states do not run physics/logic
     if (this.state.status !== GameStatus.Playing) return;
 
     const previousScore = this.state.score;
@@ -338,31 +299,25 @@ export class GameEngine {
       return; // Stop processing this frame
     }
     
-    // 7. Check Wave Completion & Trigger Level Up
+    // 7. Check Wave Completion
     if (this.state.waveCleared) {
-        // Try to trigger Level Up
-        const triggered = this.upgradeSystem.triggerLevelUp(this.state);
+        // Wave Completed!
+
+        // 1. Clear Projectiles
+        this.state.entityManager.removeByType(EntityType.Projectile);
+
+        // 2. Prepare Next Wave Data (Increments wave counter)
+        this.waveSystem.prepareNextWave(this.state);
         
-        if (triggered) {
-            // Game paused inside triggerLevelUp (status changed to LevelUp)
-
-            // Clear projectiles for clean visuals behind menu
-            this.state.entityManager.removeByType(EntityType.Projectile);
-
-            this.emit('level_up', this.state.upgradeOptions);
-            this.emit('status_change', this.state.status);
-            this.inputManager.reset();
-            // Return to stop further processing this frame
-            return; 
-        } else {
-            // Upgrades exhausted, proceed directly to next wave
-
-            // Clear projectiles
-            this.state.entityManager.removeByType(EntityType.Projectile);
-
-            this.waveSystem.prepareNextWave(this.state);
-            this.startWaveIntro();
-        }
+        // 3. Open Shop Automatically
+        this.state.status = GameStatus.Shop;
+        this.state.waveCleared = false; // Reset flag
+        
+        this.emit('status_change', this.state.status);
+        this.emit('wave_change', this.state.wave);
+        this.inputManager.reset();
+        
+        return; 
     }
 
     // 8. Reactivity
@@ -371,12 +326,10 @@ export class GameEngine {
     }
     
     if (this.state.wave !== previousWave) {
-        // Fallback catch, though explicit emits are better
       this.emit('wave_change', this.state.wave);
     }
 
     // Calculate Enemies Remaining (UI Logic)
-    // If wave is active, show count. If in delay, show 0 to indicate "waiting".
     let currentEnemiesRemaining = 0;
     if (this.state.waveActive) {
         currentEnemiesRemaining = this.state.getEnemiesRemaining();
@@ -406,8 +359,6 @@ export class GameEngine {
 
   /**
    * --- UI Event Bus ---
-   * Strictly for notifying the UI of state changes.
-   * Gameplay systems should NOT use this.
    */
   on(event: GameEventType, listener: GameEventListener) {
     if (!this.listeners.has(event)) {

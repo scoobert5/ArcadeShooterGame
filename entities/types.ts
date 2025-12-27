@@ -105,4 +105,14 @@ export interface ProjectileEntity extends BaseEntity {
   hitEntityIds: string[]; // Track which enemies have been hit to prevent bouncing back
 }
 
-export type GameEntity = PlayerEntity | EnemyEntity | ProjectileEntity;
+export interface ParticleEntity extends BaseEntity {
+  type: EntityType.Particle;
+  style: 'ricochet_trail';
+  from: Vector2;
+  to: Vector2;
+  lifetime: number;
+  maxLifetime: number;
+  width: number;
+}
+
+export type GameEntity = PlayerEntity | EnemyEntity | ProjectileEntity | ParticleEntity;

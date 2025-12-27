@@ -1,16 +1,14 @@
 import { EntityManager } from '../entities/EntityManager';
 import { PlayerEntity, EnemyEntity, ProjectileEntity, EntityType, EnemyVariant } from '../entities/types';
-import { ENEMY_SPAWN_RATE } from '../utils/constants';
-import { UpgradeDefinition } from '../systems/UpgradeSystem';
+import { ENEMY_SPAWN_RATE, GAME_WIDTH, GAME_HEIGHT } from '../utils/constants';
 
 export enum GameStatus {
   Menu = 'menu',
   Playing = 'playing',
   Paused = 'paused',
   GameOver = 'game_over',
-  LevelUp = 'level_up', // Pauses game for upgrade selection
   WaveIntro = 'wave_intro', // Countdown before wave starts
-  Shop = 'shop' // New: Upgrade Shop
+  Shop = 'shop' // Upgrade Shop (Opens between waves)
 }
 
 export interface HitEvent {
@@ -39,6 +37,10 @@ export class GameState {
   status: GameStatus;
   previousStatus: GameStatus; // Track status before pausing
   
+  // World Dimensions (Dynamic)
+  worldWidth: number;
+  worldHeight: number;
+
   // Global Progression State
   score: number;
   highScore: number;
@@ -65,8 +67,6 @@ export class GameState {
   ownedUpgrades: Map<string, number>;
   // Queue of upgrades to be processed by UpgradeSystem (external triggers)
   pendingUpgradeIds: string[];
-  // Current options presented to the player during LevelUp
-  upgradeOptions: UpgradeDefinition[];
   
   // Cache for quick access to the player entity (performance optimization)
   player: PlayerEntity | null = null; 
@@ -76,6 +76,11 @@ export class GameState {
     this.entityManager = new EntityManager();
     this.status = GameStatus.Menu;
     this.previousStatus = GameStatus.Menu;
+    
+    // Default to constants, but these will be updated by resize
+    this.worldWidth = GAME_WIDTH;
+    this.worldHeight = GAME_HEIGHT;
+
     this.score = 0;
     this.highScore = 0;
     this.wave = 1;
@@ -92,7 +97,6 @@ export class GameState {
     this.playerHitEvents = [];
     this.ownedUpgrades = new Map();
     this.pendingUpgradeIds = [];
-    this.upgradeOptions = [];
     this.isPlayerAlive = true;
   }
 
@@ -117,7 +121,6 @@ export class GameState {
     this.playerHitEvents = [];
     this.ownedUpgrades.clear();
     this.pendingUpgradeIds = [];
-    this.upgradeOptions = [];
     this.player = null;
     this.areUpgradesExhausted = false;
     this.isPlayerAlive = true;

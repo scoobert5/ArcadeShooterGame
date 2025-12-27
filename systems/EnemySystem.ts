@@ -2,8 +2,6 @@ import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
 import { EntityType, EnemyEntity, EnemyVariant } from '../entities/types';
 import { 
-  GAME_WIDTH, 
-  GAME_HEIGHT, 
   ENEMY_SPAWN_RATE, 
   ENEMY_MIN_SPAWN_RATE,
   ENEMY_SEPARATION_RADIUS,
@@ -46,7 +44,7 @@ export class EnemySystem implements System {
             
             if (isBurst) {
                 this.burstRemaining = Math.floor(Math.random() * 3) + 2; // 2 to 4 enemies
-                this.burstLocation = this.calculateSpawnPosition(); // Pick a spot for the squad
+                this.burstLocation = this.calculateSpawnPosition(state.worldWidth, state.worldHeight); // Pick a spot for the squad
                 
                 this.spawnEnemy(state, true);
                 this.burstRemaining--;
@@ -207,9 +205,9 @@ export class EnemySystem implements System {
       if (!enemy.hasEnteredArena) {
           if (
               enemy.position.x > margin && 
-              enemy.position.x < GAME_WIDTH - margin &&
+              enemy.position.x < state.worldWidth - margin &&
               enemy.position.y > margin && 
-              enemy.position.y < GAME_HEIGHT - margin
+              enemy.position.y < state.worldHeight - margin
           ) {
               enemy.hasEnteredArena = true;
           }
@@ -223,8 +221,8 @@ export class EnemySystem implements System {
               enemy.position.x = margin;
               if (enemy.velocity.x < 0) enemy.velocity.x = 0; // Slide along wall
               clamped = true;
-          } else if (enemy.position.x > GAME_WIDTH - margin) {
-              enemy.position.x = GAME_WIDTH - margin;
+          } else if (enemy.position.x > state.worldWidth - margin) {
+              enemy.position.x = state.worldWidth - margin;
               if (enemy.velocity.x > 0) enemy.velocity.x = 0;
               clamped = true;
           }
@@ -233,8 +231,8 @@ export class EnemySystem implements System {
               enemy.position.y = margin;
               if (enemy.velocity.y < 0) enemy.velocity.y = 0;
               clamped = true;
-          } else if (enemy.position.y > GAME_HEIGHT - margin) {
-              enemy.position.y = GAME_HEIGHT - margin;
+          } else if (enemy.position.y > state.worldHeight - margin) {
+              enemy.position.y = state.worldHeight - margin;
               if (enemy.velocity.y > 0) enemy.velocity.y = 0;
               clamped = true;
           }
@@ -243,9 +241,9 @@ export class EnemySystem implements System {
           const PADDING = 200;
           if (
             enemy.position.x < -PADDING ||
-            enemy.position.x > GAME_WIDTH + PADDING ||
+            enemy.position.x > state.worldWidth + PADDING ||
             enemy.position.y < -PADDING ||
-            enemy.position.y > GAME_HEIGHT + PADDING
+            enemy.position.y > state.worldHeight + PADDING
           ) {
             enemy.active = false;
           }
@@ -253,7 +251,7 @@ export class EnemySystem implements System {
     }
   }
 
-  private calculateSpawnPosition(): SpawnLocation {
+  private calculateSpawnPosition(worldWidth: number, worldHeight: number): SpawnLocation {
       // Pick a random edge: 0=Top, 1=Right, 2=Bottom, 3=Left
       const edge = Math.floor(Math.random() * 4);
       let x = 0, y = 0;
@@ -261,20 +259,20 @@ export class EnemySystem implements System {
 
       switch (edge) {
         case 0: // Top
-          x = Math.random() * GAME_WIDTH;
+          x = Math.random() * worldWidth;
           y = -PADDING;
           break;
         case 1: // Right
-          x = GAME_WIDTH + PADDING;
-          y = Math.random() * GAME_HEIGHT;
+          x = worldWidth + PADDING;
+          y = Math.random() * worldHeight;
           break;
         case 2: // Bottom
-          x = Math.random() * GAME_WIDTH;
-          y = GAME_HEIGHT + PADDING;
+          x = Math.random() * worldWidth;
+          y = worldHeight + PADDING;
           break;
         case 3: // Left
           x = -PADDING;
-          y = Math.random() * GAME_HEIGHT;
+          y = Math.random() * worldHeight;
           break;
       }
       return { x, y, edge };
@@ -289,7 +287,7 @@ export class EnemySystem implements System {
         x = this.burstLocation.x + (Math.random() * 40 - 20);
         y = this.burstLocation.y + (Math.random() * 40 - 20);
     } else {
-        const loc = this.calculateSpawnPosition();
+        const loc = this.calculateSpawnPosition(state.worldWidth, state.worldHeight);
         x = loc.x;
         y = loc.y;
     }

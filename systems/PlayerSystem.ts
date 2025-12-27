@@ -1,7 +1,6 @@
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
 import { InputState } from '../core/InputManager';
-import { GAME_WIDTH, GAME_HEIGHT } from '../utils/constants';
 import { Vec2 } from '../utils/math';
 import { EntityType, EnemyEntity, EnemyVariant } from '../entities/types';
 
@@ -32,6 +31,12 @@ export class PlayerSystem implements System {
             player.isReloading = false;
             player.currentAmmo = player.maxAmmo;
         }
+    } else {
+        // Check for Manual Reload Input
+        if (input.reload && player.currentAmmo < player.maxAmmo) {
+            player.isReloading = true;
+            player.reloadTimer = player.maxReloadTime;
+        }
     }
 
     // 1. Movement Logic
@@ -50,9 +55,9 @@ export class PlayerSystem implements System {
     player.position.x += player.velocity.x * dt;
     player.position.y += player.velocity.y * dt;
 
-    // Clamp to Screen Boundaries
-    player.position.x = Math.max(player.radius, Math.min(GAME_WIDTH - player.radius, player.position.x));
-    player.position.y = Math.max(player.radius, Math.min(GAME_HEIGHT - player.radius, player.position.y));
+    // Clamp to Screen Boundaries (Using dynamic world dimensions)
+    player.position.x = Math.max(player.radius, Math.min(state.worldWidth - player.radius, player.position.x));
+    player.position.y = Math.max(player.radius, Math.min(state.worldHeight - player.radius, player.position.y));
 
     // 2. Rotation Logic (Face the mouse cursor)
     const dx = input.pointer.x - player.position.x;

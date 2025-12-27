@@ -5,8 +5,8 @@ export interface InputState {
   right: boolean;
   fire: boolean;
   ability: boolean; // New input for Repulse Pulse
+  reload: boolean; // Manual Reload intent
   escape: boolean; // Pause intent
-  shop: boolean; // Open Shop intent
   pointer: { x: number; y: number };
 }
 
@@ -18,8 +18,8 @@ export class InputManager {
     right: false,
     fire: false,
     ability: false,
+    reload: false,
     escape: false,
-    shop: false,
     pointer: { x: 0, y: 0 },
   };
 
@@ -60,8 +60,8 @@ export class InputManager {
     this.state.right = false;
     this.state.fire = false;
     this.state.ability = false;
+    this.state.reload = false;
     this.state.escape = false;
-    this.state.shop = false;
   }
 
   private handleContextMenu = (e: MouseEvent) => {
@@ -77,8 +77,8 @@ export class InputManager {
       // Space is now Ability
       case 'Space': this.state.ability = true; break;
       case 'ShiftLeft': case 'ShiftRight': this.state.ability = true; break;
+      case 'KeyR': this.state.reload = true; break;
       case 'Escape': this.state.escape = true; break;
-      case 'KeyU': this.state.shop = true; break;
     }
   };
 
@@ -90,8 +90,8 @@ export class InputManager {
       case 'KeyD': case 'ArrowRight': this.state.right = false; break;
       case 'Space': this.state.ability = false; break;
       case 'ShiftLeft': case 'ShiftRight': this.state.ability = false; break;
+      case 'KeyR': this.state.reload = false; break;
       case 'Escape': this.state.escape = false; break;
-      case 'KeyU': this.state.shop = false; break;
     }
   };
 

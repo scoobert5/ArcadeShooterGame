@@ -1,7 +1,7 @@
 import { EnemyVariant } from '../entities/types';
 
-export const GAME_WIDTH = 800;
-export const GAME_HEIGHT = 600;
+export const GAME_WIDTH = 800; // Legacy fallback, real size is dynamic
+export const GAME_HEIGHT = 600; // Legacy fallback
 
 export const FPS = 60;
 export const TIME_STEP = 1 / FPS;
@@ -33,13 +33,14 @@ export const Colors = {
 };
 
 // Enemy Variant Configuration
+// TUNING: Increased values to boost economy for 10-wave runs
 export const ENEMY_VARIANTS = {
   [EnemyVariant.Basic]: {
     speed: 100,
     radius: 14,
     health: 20, // 2 hits
     damage: 10,
-    value: 100,
+    value: 150, // Was 100
     color: '#ef4444' // Red 500
   },
   [EnemyVariant.Fast]: {
@@ -47,7 +48,7 @@ export const ENEMY_VARIANTS = {
     radius: 10,
     health: 10, // 1 hit
     damage: 5,
-    value: 150,
+    value: 250, // Was 150
     color: '#f97316' // Orange 500
   },
   [EnemyVariant.Tank]: {
@@ -55,7 +56,7 @@ export const ENEMY_VARIANTS = {
     radius: 20,
     health: 30, // 3 hits (Base)
     damage: 20,
-    value: 300,
+    value: 600, // Was 300
     color: '#991b1b' // Red 800
   }
 };

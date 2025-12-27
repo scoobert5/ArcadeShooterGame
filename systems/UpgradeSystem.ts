@@ -370,64 +370,6 @@ export class UpgradeSystem implements System {
   }
 
   /**
-   * Checks if upgrades are available and triggers the LevelUp state if so.
-   * Returns true if LevelUp was triggered, false if upgrades are exhausted.
-   */
-  public triggerLevelUp(state: GameState): boolean {
-    if (state.areUpgradesExhausted) return false;
-    
-    const options = this.generateUpgradeOptions(state);
-    
-    if (options.length > 0) {
-      state.status = GameStatus.LevelUp;
-      state.upgradeOptions = options;
-      console.log("LevelUpReason: WAVE_CLEAR");
-      return true;
-    } else {
-      state.areUpgradesExhausted = true;
-      return false;
-    }
-  }
-
-  /**
-   * Generates a list of 3 selectable upgrades based on current progression.
-   */
-  private generateUpgradeOptions(state: GameState): UpgradeDefinition[] {
-    const options: UpgradeDefinition[] = [];
-    const maxOptions = 3;
-
-    // Identify candidate chains:
-    // A chain is a candidate if current level < tiers.length
-    const candidates: UpgradeDefinition[] = [];
-
-    for (const chain of CHAINS) {
-        const currentLevel = state.ownedUpgrades.get(chain.id) || 0;
-        
-        if (currentLevel < chain.tiers.length) {
-            const nextTier = chain.tiers[currentLevel];
-            
-            // Construct the virtual definition
-            // Note: We append the suffix to the name if it's I, II, III, otherwise we replace name if it's special
-            const isRoman = ['I', 'II', 'III'].includes(nextTier.suffix);
-            const displayName = isRoman ? `${chain.baseName} ${nextTier.suffix}` : nextTier.suffix;
-
-            candidates.push({
-                id: chain.id,
-                name: displayName,
-                description: nextTier.description,
-                rarity: nextTier.rarity,
-                maxStack: chain.tiers.length,
-                apply: nextTier.apply
-            });
-        }
-    }
-
-    // Select random options from candidates
-    const shuffled = [...candidates].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, maxOptions);
-  }
-
-  /**
    * Applies the NEXT level of an upgrade chain.
    */
   public applyUpgrade(state: GameState, upgradeId: string): boolean {
@@ -463,13 +405,13 @@ export class UpgradeSystem implements System {
   }
 
   // --- Shop Logic ---
-
+  // TUNING: Reduced costs for better mid-game feel
   public static getUpgradeCost(tierIndex: number): number {
       switch(tierIndex) {
-          case 0: return 500;   // Tier I
-          case 1: return 1500;  // Tier II
-          case 2: return 4000;  // Tier III
-          case 3: return 10000; // Tier IV (Legendary)
+          case 0: return 400;   // Tier I (Was 500)
+          case 1: return 1200;  // Tier II (Was 1500)
+          case 2: return 2800;  // Tier III (Was 4000)
+          case 3: return 6000;  // Tier IV (Was 10000)
           default: return 99999;
       }
   }
@@ -477,9 +419,9 @@ export class UpgradeSystem implements System {
   public static getUnlockWave(tierIndex: number): number {
       switch(tierIndex) {
           case 0: return 1;
-          case 1: return 5;
-          case 2: return 10;
-          case 3: return 15;
+          case 1: return 3; // Was 5
+          case 2: return 6; // Was 10
+          case 3: return 10; // Was 15
           default: return 99;
       }
   }

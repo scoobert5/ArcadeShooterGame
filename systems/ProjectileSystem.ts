@@ -1,7 +1,7 @@
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
-import { EntityType, ProjectileEntity } from '../entities/types';
-import { PROJECTILE_SPEED, PROJECTILE_RADIUS, PROJECTILE_LIFETIME, Colors, GAME_WIDTH, GAME_HEIGHT } from '../utils/constants';
+import { EntityType, ProjectileEntity, ParticleEntity } from '../entities/types';
+import { PROJECTILE_SPEED, PROJECTILE_RADIUS, PROJECTILE_LIFETIME, Colors } from '../utils/constants';
 
 export class ProjectileSystem implements System {
   update(dt: number, state: GameState) {
@@ -58,7 +58,7 @@ export class ProjectileSystem implements System {
                   ownerId: player.id,
                   // Init Ricochet properties
                   bouncesRemaining: player.ricochetBounces,
-                  hitEntityIds: []
+                  hitEntityIds: [],
                 };
 
                 state.entityManager.add(projectile);
@@ -81,15 +81,24 @@ export class ProjectileSystem implements System {
       p.position.x += p.velocity.x * dt;
       p.position.y += p.velocity.y * dt;
 
-      // Bounds Check: Destroy if off-screen (Containment)
+      // Bounds Check: Destroy if off-screen (Containment using dynamic world size)
       if (
         p.position.x < 0 || 
-        p.position.x > GAME_WIDTH || 
+        p.position.x > state.worldWidth || 
         p.position.y < 0 || 
-        p.position.y > GAME_HEIGHT
+        p.position.y > state.worldHeight
       ) {
           p.active = false;
       }
+    }
+
+    // 3. Update Particles (Ricochet Trails, etc.)
+    const particles = state.entityManager.getByType(EntityType.Particle) as ParticleEntity[];
+    for (const p of particles) {
+        p.lifetime -= dt;
+        if (p.lifetime <= 0) {
+            p.active = false;
+        }
     }
   }
 }

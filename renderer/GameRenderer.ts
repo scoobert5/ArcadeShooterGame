@@ -1,6 +1,6 @@
 import { GameState, GameStatus } from '../core/GameState';
 import { Colors } from '../utils/constants';
-import { EntityType, EnemyEntity, EnemyVariant, PlayerEntity } from '../entities/types';
+import { EntityType, EnemyEntity, EnemyVariant, PlayerEntity, ProjectileEntity, ParticleEntity } from '../entities/types';
 
 /**
  * Handles all canvas drawing operations.
@@ -28,14 +28,33 @@ export class GameRenderer {
    */
   render(state: GameState) {
     this.clear();
+    
+    // Safety check if resizing state hasn't propagated
+    if (this.width !== state.worldWidth || this.height !== state.worldHeight) {
+       // This might happen for one frame during resize, generally acceptable
+    }
 
     // Render all active entities
     const entities = state.entityManager.getAll();
+    
+    // Separate drawing pass for particles (trails) behind everything
+    this.ctx.save();
+    for (const entity of entities) {
+        if (entity.type === EntityType.Particle) {
+            this.drawParticle(entity as ParticleEntity);
+        }
+    }
+    this.ctx.restore();
+
     for (const entity of entities) {
       // Don't draw player during Wave Intro (hidden until start)
       if (state.status === GameStatus.WaveIntro && entity.type === EntityType.Player) {
           continue;
       }
+      
+      // Don't draw particles in the main entity loop (already drawn)
+      if (entity.type === EntityType.Particle) continue;
+      
       this.drawEntity(entity);
     }
     
@@ -59,6 +78,23 @@ export class GameRenderer {
   private clear() {
     this.ctx.fillStyle = Colors.Background;
     this.ctx.fillRect(0, 0, this.width, this.height);
+  }
+
+  private drawParticle(particle: ParticleEntity) {
+      if (particle.style === 'ricochet_trail') {
+          const alpha = particle.lifetime / particle.maxLifetime;
+          
+          this.ctx.beginPath();
+          this.ctx.moveTo(particle.from.x, particle.from.y);
+          this.ctx.lineTo(particle.to.x, particle.to.y);
+          
+          this.ctx.lineCap = 'round';
+          this.ctx.lineWidth = particle.width;
+          
+          // Use Amber for the trail (Matches Projectile Color)
+          this.ctx.strokeStyle = `rgba(251, 191, 36, ${alpha})`;
+          this.ctx.stroke();
+      }
   }
 
   private drawEntity(entity: any) {
@@ -122,6 +158,7 @@ export class GameRenderer {
         this.ctx.fillRect(-barWidth/2, 0, barWidth, barHeight);
         
         // Progress
+        // Fills from 0 (empty) to full (loaded)
         const pct = 1 - (player.reloadTimer / player.maxReloadTime);
         this.ctx.fillStyle = '#fbbf24'; // Amber
         this.ctx.fillRect(-barWidth/2, 0, barWidth * pct, barHeight);
