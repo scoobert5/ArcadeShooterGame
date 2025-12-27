@@ -1,10 +1,10 @@
 import { System } from './BaseSystem';
-import { GameState } from '../core/GameState';
+import { GameState, GameStatus } from '../core/GameState';
 
 export class ProgressionSystem implements System {
   update(dt: number, state: GameState) {
-    // TODO: Track wave timer
-    // TODO: Spawn enemies based on difficulty
-    // TODO: Handle Level Up / Upgrades
+    // TODO: Check if Player is dead -> Set status to GameOver
+    // TODO: Check if Wave is cleared -> Increment Wave -> Spawn new batch
+    // TODO: Update Score Multipliers
   }
 }

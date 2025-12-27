@@ -11,6 +11,10 @@ export class EntityManager {
     this.entities = this.entities.filter(e => e.id !== id);
   }
 
+  removeByType(type: EntityType) {
+    this.entities = this.entities.filter(e => e.type !== type);
+  }
+
   getByType(type: EntityType): GameEntity[] {
     return this.entities.filter(e => e.type === type);
   }

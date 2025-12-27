@@ -1,8 +1,8 @@
 export class Loop {
   private lastTime: number = 0;
   private animationFrameId: number | null = null;
-  private onUpdate: (dt: number) => void;
-  private isRunning: boolean = false;
+  private readonly onUpdate: (dt: number) => void;
+  public isRunning: boolean = false;
 
   constructor(onUpdate: (dt: number) => void) {
     this.onUpdate = onUpdate;
@@ -10,6 +10,7 @@ export class Loop {
 
   start() {
     if (this.isRunning) return;
+    
     this.isRunning = true;
     this.lastTime = performance.now();
     this.loop();
@@ -27,10 +28,11 @@ export class Loop {
     if (!this.isRunning) return;
 
     const currentTime = performance.now();
-    const deltaTime = (currentTime - this.lastTime) / 1000; // Seconds
+    // Calculate delta time in seconds
+    const deltaTime = (currentTime - this.lastTime) / 1000;
     this.lastTime = currentTime;
 
-    // Cap delta time to prevent spiraling physics if tab is backgrounded
+    // Safety Cap: Prevent huge time jumps if tab is inactive (e.g., max 0.1s aka 10FPS)
     const safeDelta = Math.min(deltaTime, 0.1);
 
     this.onUpdate(safeDelta);
