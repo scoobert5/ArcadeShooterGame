@@ -107,7 +107,12 @@ export class GameEngine {
     // Initial Emit
     if (this.state.player) {
         this.emit('score_change', this.state.score);
-        this.emit('player_health_change', { current: this.state.player.health, max: this.state.player.maxHealth });
+        this.emit('player_health_change', { 
+            current: this.state.player.health, 
+            max: this.state.player.maxHealth,
+            shields: this.state.player.currentShields,
+            maxShields: this.state.player.maxShields 
+        });
     }
   }
 
@@ -175,6 +180,7 @@ export class GameEngine {
       currentShields: 0,
       maxShields: 0, // 0 = Locked
       shieldHitAnimTimer: 0,
+      shieldPopTimer: 0,
 
       // Initial Upgradable Stats
       speed: BALANCE.PLAYER.BASE_SPEED,
@@ -188,6 +194,10 @@ export class GameEngine {
       splitAngle: 0.3,
       ricochetBounces: 0,
       ricochetSearchRadius: BALANCE.PLAYER.BASE_RICOCHET_RADIUS,
+      
+      // Burst
+      burstQueue: 0,
+      burstTimer: 0,
 
       damageReduction: 0,
       waveHealRatio: BALANCE.WAVE.HEAL_RATIO
@@ -354,7 +364,12 @@ export class GameEngine {
           
           // Update player stats if needed
           if (this.state.player) {
-            this.emit('player_health_change', { current: this.state.player.health, max: this.state.player.maxHealth });
+            this.emit('player_health_change', { 
+                current: this.state.player.health, 
+                max: this.state.player.maxHealth,
+                shields: this.state.player.currentShields,
+                maxShields: this.state.player.maxShields 
+            });
             this.lastPlayerHealth = this.state.player.health;
           }
       }
@@ -404,6 +419,10 @@ export class GameEngine {
     const previousScore = this.state.score;
     const previousStatus = this.state.status;
     const previousWave = this.state.wave;
+    
+    // Snapshot player state for health change detection
+    let prevShields = -1;
+    if (this.state.player) prevShields = this.state.player.currentShields;
 
     // 4. Execute System Pipeline
     for (const system of this.systems) {
@@ -469,10 +488,18 @@ export class GameEngine {
       this.emit('status_change', this.state.status);
     }
 
-    // Health Change Check
-    if (this.state.player && this.state.player.health !== this.lastPlayerHealth) {
-      this.emit('player_health_change', { current: this.state.player.health, max: this.state.player.maxHealth });
-      this.lastPlayerHealth = this.state.player.health;
+    // Health/Shield Change Check
+    if (this.state.player) {
+        const p = this.state.player;
+        if (p.health !== this.lastPlayerHealth || p.currentShields !== prevShields) {
+            this.emit('player_health_change', { 
+                current: p.health, 
+                max: p.maxHealth,
+                shields: p.currentShields,
+                maxShields: p.maxShields 
+            });
+            this.lastPlayerHealth = p.health;
+        }
     }
 
     // Hit Event Feedback

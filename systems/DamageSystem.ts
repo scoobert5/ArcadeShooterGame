@@ -6,9 +6,15 @@ import { Colors } from '../utils/constants';
 
 export class DamageSystem implements System {
   update(dt: number, state: GameState) {
-    // 0. Update Hazards (Damage & Lifetime)
-    const hazards = state.entityManager.getByType(EntityType.Hazard) as HazardEntity[];
     const player = state.player;
+
+    // 0. Update Shield Pop Timer
+    if (player && player.shieldPopTimer > 0) {
+        player.shieldPopTimer -= dt;
+    }
+
+    // 1. Update Hazards (Damage & Lifetime)
+    const hazards = state.entityManager.getByType(EntityType.Hazard) as HazardEntity[];
     const enemies = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
 
     for (const hazard of hazards) {
@@ -57,40 +63,29 @@ export class DamageSystem implements System {
                     dist = Vec2.dist(hazard.position, player.position);
                 }
 
-                // Check radius overlap
                 if (dist < hazard.radius + player.radius) {
-                    
                     if (hazard.tickTimer <= 0) {
-                        // Deal Damage
-                        if (player.invulnerabilityTimer <= 0) {
-                             // Shield check for hazard? Usually hazards bypass shield collision boundary because they are ground effects,
-                             // but for fairness, if shield is "Energy Field", it might block toxics?
-                             // Prompt A.1 says "Enemy contact checks against shield radius". Doesn't specify ground hazards.
-                             // Assuming ground hazards ignore shield or damage shield.
-                             // Let's have hazards damage player/shield normally.
+                        // Hazard damage logic
+                         if (player.currentShields > 0) {
+                             player.currentShields--;
+                             player.invulnerabilityTimer = 0.5;
+                             player.shieldPopTimer = 0.2; // Visual pop
+                         } else if (player.invulnerabilityTimer <= 0) {
+                             const damage = hazard.damage;
+                             const mitigation = player.damageReduction || 0;
+                             const actualDamage = Math.max(1, damage * (1 - mitigation));
                              
-                             if (player.currentShields > 0) {
-                                 player.currentShields--;
-                                 player.invulnerabilityTimer = 0.5;
-                                 player.shieldHitAnimTimer = 0.2;
-                             } else {
-                                 const damage = hazard.damage;
-                                 const mitigation = player.damageReduction || 0;
-                                 const actualDamage = Math.max(1, damage * (1 - mitigation));
-                                 
-                                 player.health -= actualDamage;
-                                 player.hitFlashTimer = 0.1;
-                             }
-                             // No Invulnerability timer for hazards, just tick rate
-                             hazard.tickTimer = 0.5; // Tick every 0.5s
-                        }
+                             player.health -= actualDamage;
+                             player.hitFlashTimer = 0.1;
+                         }
+                         hazard.tickTimer = 0.5; 
                     }
                 }
             }
         }
     }
 
-    // 1. Process Projectile Hits on Enemies
+    // 2. Process Projectile Hits on Enemies
     for (const hit of state.hitEvents) {
       const { projectile, enemy } = hit;
 
@@ -106,51 +101,36 @@ export class DamageSystem implements System {
       }
 
       enemy.health -= damage;
+      enemy.hitFlashTimer = 0.1; 
       
-      // Trigger visual flash
-      enemy.hitFlashTimer = 0.1; // 100ms flash
-      
-      // Handle Ricochet Logic BEFORE destroying projectile state
       if (projectile.bouncesRemaining > 0) {
           this.handleRicochet(state, projectile, enemy);
       }
 
-      // Projectile is destroyed on impact
       projectile.active = false;
 
-      // Check Death
       if (enemy.health <= 0) {
         enemy.active = false;
         state.score += enemy.value;
       }
     }
 
-    // 2. Process Enemy Hits on Player (Collision)
-    // IMPORTANT: CollisionSystem creates these events based on body collision.
-    // However, we now have shield logic that intercepts enemies further out.
-    // The CollisionSystem should effectively prevent body overlap if shield is up.
-    // But if they DO overlap (e.g. frame skip), this handles damage.
-    
-    // We also need to check "Shield Radius" collisions which might NOT be in playerHitEvents
-    // if CollisionSystem uses body radius.
-    // **Actually, CollisionSystem handles physics. We need logic there too.**
-    // But for DAMAGE logic:
-    
+    // 3. Process Enemy Hits on Player (Collision)
     for (const hit of state.playerHitEvents) {
       const { player, enemy } = hit;
 
       if (!player.active || !enemy.active) continue;
 
-      // Only take damage if invulnerability timer is 0
       if (player.invulnerabilityTimer <= 0) {
         
-        // --- SHIELD CHECK ---
+        // --- SHIELD LOGIC ---
+        // Even though CollisionSystem handles physics, we handle the "Game Rules" of the hit here.
         if (player.currentShields > 0) {
             player.currentShields--;
-            player.invulnerabilityTimer = 0.5; // Longer invuln on shield break
-            player.shieldHitAnimTimer = 0.2; // Visual pop
+            player.invulnerabilityTimer = 0.5; 
+            player.shieldPopTimer = 0.2; // TRIGGER POP VISUAL
             
-            // Major Knockback to Enemy on Block
+            // Knockback Enemy
             const dx = enemy.position.x - player.position.x;
             const dy = enemy.position.y - player.position.y;
             const dist = Math.sqrt(dx*dx + dy*dy);
@@ -159,21 +139,19 @@ export class DamageSystem implements System {
                 enemy.knockback.x += dir.x * 800;
                 enemy.knockback.y += dir.y * 800;
             }
-            continue; 
+            continue; // Damage negated
         }
 
-        // Calculate Actual Damage (Raw Damage * (1 - Reduction))
+        // HP Damage
         const rawDamage = enemy.damage;
         const mitigation = player.damageReduction || 0;
         const actualDamage = Math.max(1, rawDamage * (1 - mitigation));
 
         player.health -= actualDamage;
-        
-        // Grant temporary invulnerability
         player.invulnerabilityTimer = 0.35;
         player.hitFlashTimer = 0.2;
 
-        // --- Bouncy Knockback Impulse ---
+        // Bouncy Knockback Impulse
         const dx = enemy.position.x - player.position.x;
         const dy = enemy.position.y - player.position.y;
         const dist = Math.sqrt(dx*dx + dy*dy);
@@ -181,12 +159,10 @@ export class DamageSystem implements System {
         if (dist > 0) {
             const dir = { x: dx/dist, y: dy/dist };
             const impulseStrength = 500;
-            
             enemy.knockback.x += dir.x * impulseStrength;
             enemy.knockback.y += dir.y * impulseStrength;
         }
         
-        // Check Player Death
         if (player.health <= 0) {
           player.health = 0;
           player.active = false;
@@ -195,19 +171,18 @@ export class DamageSystem implements System {
       }
     }
     
-    // 3. Process Enemy Projectile Hits on Player
+    // 4. Process Enemy Projectile Hits on Player
     for (const hit of state.playerProjectileCollisionEvents) {
         const { player, projectile } = hit;
         if (!player.active || !projectile.active) continue;
 
         if (player.invulnerabilityTimer <= 0) {
             
-            // --- SHIELD CHECK ---
             if (player.currentShields > 0) {
                 player.currentShields--;
                 player.invulnerabilityTimer = 0.5;
-                player.shieldHitAnimTimer = 0.2;
-                projectile.active = false; // Block projectile
+                player.shieldPopTimer = 0.2; // TRIGGER POP VISUAL
+                projectile.active = false; 
                 continue;
             }
 
@@ -219,7 +194,6 @@ export class DamageSystem implements System {
             player.invulnerabilityTimer = 0.35;
             player.hitFlashTimer = 0.2;
             
-            // Destroy projectile
             projectile.active = false;
 
             if (player.health <= 0) {
@@ -229,7 +203,6 @@ export class DamageSystem implements System {
             }
         }
     }
-
     
     // Check player death from hazard ticks
     if (player && player.health <= 0 && player.active) {

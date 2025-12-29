@@ -277,67 +277,61 @@ export class GameRenderer {
         this.ctx.lineTo(entity.radius, 0);
         this.ctx.stroke();
         
-        // A. SHIELD VISUALS (Updated to Final Spec)
         const player = entity as PlayerEntity;
+        const shieldRadius = player.radius + 24; // Outer shell collision/visual radius
         
-        // Conditions: 
-        // 1. Has shields > 0
-        // 2. Just broke (shieldHitAnimTimer > 0)
-        
-        if (player.currentShields > 0 || (player.shieldHitAnimTimer && player.shieldHitAnimTimer > 0)) {
-            // Un-rotate for stable shield ring? 
-            // PROMPT D.1: "Shield ring... must rotate with player aim"
-            // So we KEEP the rotation context.
+        // --- 1. POP EFFECT (Burst when charge consumed) ---
+        // This renders INDEPENDENTLY of the main shield
+        if (player.shieldPopTimer > 0) {
+            // Unrotate for stability? No, consistent with aim is fine.
+            const t = 1 - (player.shieldPopTimer / 0.2); // 0 to 1
+            const burstRadius = shieldRadius + (t * 20); // Expand outward
+            const alpha = 1 - t;
             
-            const shieldRadius = player.radius + 24; // Outer shell
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, burstRadius, 0, Math.PI * 2);
+            this.ctx.strokeStyle = `rgba(100, 230, 255, ${alpha})`; // Bright cyan pop
+            this.ctx.lineWidth = 4;
+            this.ctx.stroke();
+            
+            // Inner flash fill
+            this.ctx.fillStyle = `rgba(100, 230, 255, ${alpha * 0.3})`;
+            this.ctx.fill();
+        }
+
+        // --- 2. PERSISTENT SHIELD VISUALS ---
+        if (player.currentShields > 0) {
             
             // Determine opacity based on charges
-            let opacity = 0;
-            if (player.currentShields > 0) {
-                 // Scale 0.2 to 0.6
-                 opacity = 0.2 + (player.currentShields / player.maxShields) * 0.4;
-            } else if (player.shieldHitAnimTimer > 0) {
-                 // Popping
-                 opacity = (player.shieldHitAnimTimer / 0.2) * 1.0; 
-            }
-            opacity = Math.max(0, Math.min(1, opacity));
+            // Scale 0.2 to 0.6
+            const opacity = 0.2 + (player.currentShields / player.maxShields) * 0.4;
+            const shieldColor = 'rgba(14, 165, 233,'; // Sky Blue
+
+            // Spherical Energy Field
+            const grad = this.ctx.createRadialGradient(0, 0, shieldRadius * 0.7, 0, 0, shieldRadius);
+            grad.addColorStop(0, `${shieldColor} 0.0)`);
+            grad.addColorStop(0.8, `${shieldColor} ${opacity * 0.3})`);
+            grad.addColorStop(1, `${shieldColor} ${opacity * 0.6})`);
             
-            if (opacity > 0) {
-                // POP Effect Color Override
-                const isPopping = player.currentShields === 0 && player.shieldHitAnimTimer > 0;
-                const shieldColor = isPopping ? 'rgba(200, 230, 255,' : 'rgba(14, 165, 233,';
+            this.ctx.fillStyle = grad;
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            // Pulsing Band
+            const pulse = Math.sin(Date.now() / 200) * 0.1 + 0.9;
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, shieldRadius * 0.85 * pulse, 0, Math.PI * 2);
+            this.ctx.strokeStyle = `${shieldColor} ${opacity * 0.4})`;
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
 
-                // 1. Spherical Energy Field
-                const grad = this.ctx.createRadialGradient(0, 0, shieldRadius * 0.7, 0, 0, shieldRadius);
-                grad.addColorStop(0, `${shieldColor} 0.0)`);
-                grad.addColorStop(0.8, `${shieldColor} ${opacity * 0.3})`);
-                grad.addColorStop(1, `${shieldColor} ${opacity * 0.6})`);
-                
-                this.ctx.fillStyle = grad;
-                this.ctx.beginPath();
-                this.ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
-                this.ctx.fill();
-                
-                // 2. Animated Band Effect (Rotating stripe)
-                // We want the stripe to move relative to the shield surface
-                // If the shield rotates with aim, the stripe rotates with it.
-                // To animate it "spinning" independently or pulsing, we can modify arc or alpha.
-                
-                // Let's do a pulsing band
-                const pulse = Math.sin(Date.now() / 200) * 0.1 + 0.9;
-                this.ctx.beginPath();
-                this.ctx.arc(0, 0, shieldRadius * 0.85 * pulse, 0, Math.PI * 2);
-                this.ctx.strokeStyle = `${shieldColor} ${opacity * 0.4})`;
-                this.ctx.lineWidth = 2;
-                this.ctx.stroke();
-
-                // 3. Rim Highlight
-                this.ctx.beginPath();
-                this.ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
-                this.ctx.strokeStyle = `${shieldColor} ${opacity * 0.9})`;
-                this.ctx.lineWidth = isPopping ? 4 : 2;
-                this.ctx.stroke();
-            }
+            // Rim Highlight
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+            this.ctx.strokeStyle = `${shieldColor} ${opacity * 0.9})`;
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
         }
     }
 
@@ -367,12 +361,6 @@ export class GameRenderer {
         this.ctx.lineWidth = 4;
         this.ctx.stroke();
         
-        // Progress Arc (Starts at rotation - PI/2 ?? No, "start point aligns with aim")
-        // Aim is `rotation`. So start at `rotation`.
-        // Let's draw it as a symmetric arc growing? Or a circle filling?
-        // "Ring fills smoothly as a solid arc". Typically clockwise from top or aim.
-        // Let's go clockwise from aim.
-        
         this.ctx.beginPath();
         this.ctx.arc(x, y, ringRadius, rotation, rotation + (Math.PI * 2 * reloadPct));
         this.ctx.strokeStyle = isAlmostDone ? '#ffffff' : '#fbbf24'; // Amber
@@ -388,19 +376,6 @@ export class GameRenderer {
         }
       } else {
         // Normal State: Segmented Bullets
-        // "Yellow segmented ring... start point aligns with player's aim direction"
-        
-        // We centre the arc segments around the aim direction? Or start from it?
-        // Typically UI looks best if centered or symmetric.
-        // But prompt says "start point aligns". 
-        // Let's distribute them symmetrically AROUND the aim direction for best "HUD" feel.
-        // i.e. Aim is center.
-        
-        const totalArc = Math.PI * 1.5; // Don't close the full circle, clearer directionality
-        const startAngle = rotation - (totalArc / 2);
-        
-        // Wait, standard ammo rings usually go full circle.
-        // Let's stick to full circle but start at aim.
         const fullCircle = Math.PI * 2;
         const gap = 0.15; // Radians gap
         
@@ -485,6 +460,15 @@ export class GameRenderer {
             this.ctx.beginPath();
             this.ctx.arc(x, y, pulseRadius, rotation, rotation + (Math.PI * 2 * pct));
             this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.3)'; // Cyan faint
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+        } else {
+            // READY STATE (New visual for Issue B)
+            const pulse = 1 + Math.sin(Date.now() / 250) * 0.08; // Breathe
+            
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, pulseRadius * pulse, 0, Math.PI * 2);
+            this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.8)'; // Cyan Glow
             this.ctx.lineWidth = 2;
             this.ctx.stroke();
         }

@@ -82,14 +82,19 @@ export interface PlayerEntity extends BaseEntity {
   // Shield Ability
   currentShields: number;
   maxShields: number; // 0 means locked
-  shieldHitAnimTimer: number; // Visual pop for shield hit
+  shieldHitAnimTimer: number; // Visual pop for shield hit (Used for pop visual)
+  shieldPopTimer: number; // Dedicated timer for the burst effect
 
-  // Offensive Stats
+  // Offensive Stats & Burst Logic
   projectileCount: number; // Number of projectiles fired per stream (Multi-Shot)
   projectileStreams: number; // Number of streams (Split-Shot)
   splitAngle: number; // Total arc in radians for split shot (0 = parallel)
   ricochetBounces: number; // How many times projectiles bounce (Ricochet)
   ricochetSearchRadius: number; // Max distance to look for next ricochet target
+  
+  // Multi-Shot Bursting
+  burstQueue: number; // How many shots left to fire in current burst
+  burstTimer: number; // Time until next burst shot
   
   // Upgradable Stats
   speed: number;

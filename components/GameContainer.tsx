@@ -23,7 +23,7 @@ export const GameContainer: React.FC = () => {
   const [wave, setWave] = useState(1);
   const [enemiesRemaining, setEnemiesRemaining] = useState(0);
   const [waveCountdown, setWaveCountdown] = useState(3);
-  const [playerHealth, setPlayerHealth] = useState({ current: 100, max: 100 });
+  const [playerHealth, setPlayerHealth] = useState({ current: 100, max: 100, shields: 0, maxShields: 0 });
   const [ammoState, setAmmoState] = useState({ current: 10, max: 10, isReloading: false });
   const [bossHealth, setBossHealth] = useState({ current: 0, max: 100, active: false });
 
@@ -53,7 +53,7 @@ export const GameContainer: React.FC = () => {
         setWaveCountdown(time);
     };
 
-    const handleHealthChange = (health: { current: number, max: number }) => {
+    const handleHealthChange = (health: { current: number, max: number, shields: number, maxShields: number }) => {
         setPlayerHealth(health);
     };
 
@@ -174,7 +174,12 @@ export const GameContainer: React.FC = () => {
               isReloading={ammoState.isReloading}
               canShop={false} // Disabled manual shop hint/access
           />
-          <PlayerHealthBar current={playerHealth.current} max={playerHealth.max} />
+          <PlayerHealthBar 
+              current={playerHealth.current} 
+              max={playerHealth.max} 
+              shields={playerHealth.shields} 
+              maxShields={playerHealth.maxShields} 
+          />
           {/* Add Boss Health Bar here */}
           <BossHealthBar current={bossHealth.current} max={bossHealth.max} active={bossHealth.active} />
         </>
