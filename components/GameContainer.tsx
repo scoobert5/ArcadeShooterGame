@@ -6,6 +6,8 @@ import { PauseMenu } from './UI/PauseMenu';
 import { PlayerHealthBar } from './UI/PlayerHealthBar';
 import { WaveAnnouncement } from './UI/WaveAnnouncement';
 import { UpgradeShop } from './UI/UpgradeShop';
+import { DevConsole } from './UI/DevConsole';
+import { BossHealthBar } from './UI/BossHealthBar';
 import { Play } from 'lucide-react';
 import { GameStatus } from '../core/GameState';
 
@@ -13,6 +15,7 @@ export const GameContainer: React.FC = () => {
   // Use ref to keep engine instance persistent across re-renders
   const engineRef = useRef<GameEngine>(new GameEngine());
   const engine = engineRef.current;
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   // React State for UI
   const [gameState, setGameState] = useState<GameStatus>(GameStatus.Menu);
@@ -22,12 +25,20 @@ export const GameContainer: React.FC = () => {
   const [waveCountdown, setWaveCountdown] = useState(3);
   const [playerHealth, setPlayerHealth] = useState({ current: 100, max: 100 });
   const [ammoState, setAmmoState] = useState({ current: 10, max: 10, isReloading: false });
+  const [bossHealth, setBossHealth] = useState({ current: 0, max: 100, active: false });
 
   useEffect(() => {
     // Subscribe to engine events
     const handleScore = (newScore: number) => setScore(newScore);
     const handleStatusChange = (status: GameStatus) => {
         setGameState(status);
+        
+        // Refocus canvas when closing DevConsole
+        if (status !== GameStatus.DevConsole && document.activeElement instanceof HTMLElement) {
+            // If the focused element was the input or something else, blur it
+            document.activeElement.blur();
+            // Try to find canvas to focus if needed, or just let body take it
+        }
     };
     
     const handleWaveChange = (newWave: number) => {
@@ -44,6 +55,10 @@ export const GameContainer: React.FC = () => {
 
     const handleHealthChange = (health: { current: number, max: number }) => {
         setPlayerHealth(health);
+    };
+
+    const handleBossHealthChange = (health: { current: number, max: number, active: boolean }) => {
+        setBossHealth(health);
     };
     
     // Poll for ammo state
@@ -63,15 +78,43 @@ export const GameContainer: React.FC = () => {
     engine.on('wave_change', handleWaveChange);
     engine.on('wave_progress', handleWaveProgress);
     engine.on('wave_intro_timer', handleWaveTimer);
+    engine.on('boss_health_change', handleBossHealthChange);
+
+    // Global Key Listener for Dev Console (Capture Phase)
+    // This runs BEFORE inputs receive key events, ensuring Tilde always works.
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+        // Universal Console Toggle: ` or ~
+        if (e.code === 'Backquote' || e.key === '`' || e.key === '~') {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            engine.toggleConsole();
+            return;
+        }
+
+        // Escape handling when console is open
+        if (e.code === 'Escape' && engine.state.status === GameStatus.DevConsole) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            engine.toggleConsole();
+            return;
+        }
+    };
+
+    // Attach with useCapture = true
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
 
     return () => {
       clearInterval(syncInterval);
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
       engine.off('score_change', handleScore);
       engine.off('status_change', handleStatusChange);
       engine.off('player_health_change', handleHealthChange);
       engine.off('wave_change', handleWaveChange);
       engine.off('wave_progress', handleWaveProgress);
       engine.off('wave_intro_timer', handleWaveTimer);
+      engine.off('boss_health_change', handleBossHealthChange);
     };
   }, [engine]);
 
@@ -95,13 +138,32 @@ export const GameContainer: React.FC = () => {
       engine.closeShop();
   };
 
+  const handleConsoleCommand = (cmd: string) => {
+      const lowerCmd = cmd.toLowerCase();
+      if (lowerCmd.startsWith('wave_')) {
+          const waveNum = parseInt(lowerCmd.split('_')[1], 10);
+          engine.jumpToWave(waveNum);
+      }
+      else if (lowerCmd.startsWith('givescore_')) {
+          const amount = parseInt(lowerCmd.split('_')[1], 10);
+          engine.giveScore(amount);
+      }
+      else if (lowerCmd === 'openshop') {
+          engine.openDevShop();
+      }
+  };
+
+  const handleConsoleClose = () => {
+      engine.toggleConsole();
+  };
+
   return (
-    <div className="relative w-full h-full min-h-screen bg-slate-950 overflow-hidden">
+    <div ref={canvasRef} className="relative w-full h-full min-h-screen bg-slate-950 overflow-hidden outline-none">
       
       <GameCanvas engine={engine} />
       
       {/* HUD Overlay */}
-      {(gameState === GameStatus.Playing || gameState === GameStatus.Paused || gameState === GameStatus.WaveIntro || gameState === GameStatus.Shop) && (
+      {(gameState === GameStatus.Playing || gameState === GameStatus.Paused || gameState === GameStatus.WaveIntro || gameState === GameStatus.Shop || gameState === GameStatus.DevConsole) && (
         <>
           <HUD 
               score={score} 
@@ -113,6 +175,8 @@ export const GameContainer: React.FC = () => {
               canShop={false} // Disabled manual shop hint/access
           />
           <PlayerHealthBar current={playerHealth.current} max={playerHealth.max} />
+          {/* Add Boss Health Bar here */}
+          <BossHealthBar current={bossHealth.current} max={bossHealth.max} active={bossHealth.active} />
         </>
       )}
       
@@ -133,6 +197,11 @@ export const GameContainer: React.FC = () => {
       {/* Pause Menu Overlay */}
       {gameState === GameStatus.Paused && (
         <PauseMenu onResume={handleResume} onQuit={handleQuit} />
+      )}
+
+      {/* Dev Console Overlay */}
+      {gameState === GameStatus.DevConsole && (
+        <DevConsole onCommand={handleConsoleCommand} onClose={handleConsoleClose} />
       )}
 
       {/* Menus Overlay */}

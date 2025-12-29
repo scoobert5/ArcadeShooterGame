@@ -29,18 +29,20 @@ export const Colors = {
   Player: '#4f46e5', // Indigo 600
   Enemy: '#ef4444',  // Red 500
   Projectile: '#fbbf24', // Amber 400
+  EnemyProjectile: '#e879f9', // Fuchsia 400 (Distinct from Amber)
   Background: '#0f172a', // Slate 900
+  Boss: '#7e22ce',   // Purple 700 (Boss Color)
 };
 
 // Enemy Variant Configuration
-// TUNING: Increased values to boost economy for 10-wave runs
+// TUNING: Reduced values to slow down economy
 export const ENEMY_VARIANTS = {
   [EnemyVariant.Basic]: {
     speed: 100,
     radius: 14,
     health: 20, // 2 hits
     damage: 10,
-    value: 150, // Was 100
+    value: 80, // Was 150
     color: '#ef4444' // Red 500
   },
   [EnemyVariant.Fast]: {
@@ -48,7 +50,7 @@ export const ENEMY_VARIANTS = {
     radius: 10,
     health: 10, // 1 hit
     damage: 5,
-    value: 250, // Was 150
+    value: 120, // Was 250
     color: '#f97316' // Orange 500
   },
   [EnemyVariant.Tank]: {
@@ -56,7 +58,23 @@ export const ENEMY_VARIANTS = {
     radius: 20,
     health: 30, // 3 hits (Base)
     damage: 20,
-    value: 600, // Was 300
+    value: 300, // Was 600
     color: '#991b1b' // Red 800
+  },
+  [EnemyVariant.Shooter]: {
+    speed: 75,    // Slower, cautious
+    radius: 14,
+    health: 15,   // Fragile
+    damage: 10,   // Projectile damage
+    value: 150,   
+    color: '#d946ef' // Fuchsia 500
+  },
+  [EnemyVariant.Boss]: {
+    speed: 85,   // Was 75 - Faster baseline
+    radius: 65,  // Was 60 - Larger physical presence
+    health: 1400, // Was 1200 - More durable
+    damage: 35, 
+    value: 5000, 
+    color: Colors.Boss
   }
 };

@@ -1,7 +1,7 @@
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
-import { EntityType, EnemyVariant } from '../entities/types';
-import { WAVE_DIFFICULTY_SCALING } from '../utils/constants';
+import { EntityType } from '../entities/types';
+import { BALANCE, getWaveEnemyWeights } from '../config/balance';
 
 export class WaveSystem implements System {
   update(dt: number, state: GameState) {
@@ -21,7 +21,7 @@ export class WaveSystem implements System {
         if (state.player && state.player.active) {
             const missingHealth = state.player.maxHealth - state.player.health;
             if (missingHealth > 0) {
-                const healRatio = state.player.waveHealRatio || 0.15; // Default 15%
+                const healRatio = state.player.waveHealRatio || BALANCE.WAVE.HEAL_RATIO;
                 const healAmount = missingHealth * healRatio;
                 
                 state.player.health = Math.min(state.player.maxHealth, state.player.health + healAmount);
@@ -39,56 +39,30 @@ export class WaveSystem implements System {
   public prepareNextWave(state: GameState) {
     state.wave++;
     
-    // Budget: Tripled for higher density (Requested 200% increase)
-    // Original formula: 12 + (state.wave * 4)
-    // New formula: (12 + (state.wave * 4)) * 3
-    // Wave 1: 16 -> 48
-    // Wave 5: 32 -> 96
-    // Wave 10: 52 -> 156
-    const baseBudget = 12 + (state.wave * 4);
-    state.enemiesRemainingInWave = Math.floor(baseBudget * 3);
-    
-    // Difficulty Multiplier: 
-    // - 5% increase per wave starting AFTER wave 1
-    // - Extra 2% compounding scaling after Wave 7 to prevent fire-rate trivialization
-    let multiplier = 1 + (Math.max(0, state.wave - 1) * WAVE_DIFFICULTY_SCALING);
-    
-    if (state.wave > 7) {
-        multiplier += (state.wave - 7) * 0.02; 
+    // Check for Boss Wave (Every 10 levels)
+    state.isBossWave = (state.wave % 10 === 0);
+
+    if (state.isBossWave) {
+        // BOSS WAVE LOGIC
+        // Only 1 enemy to spawn (The Boss)
+        state.enemiesRemainingInWave = 1;
+    } else {
+        // STANDARD WAVE LOGIC
+        const baseBudget = BALANCE.WAVE.BASE_BUDGET + (state.wave * BALANCE.WAVE.BUDGET_PER_WAVE);
+        state.enemiesRemainingInWave = Math.floor(baseBudget * BALANCE.WAVE.BUDGET_MULTIPLIER);
     }
     
-    state.difficultyMultiplier = multiplier;
+    // Difficulty Multiplier: Linear continuous scaling
+    // We map the generic difficulty to HP scaling for general reference (Score etc.)
+    state.difficultyMultiplier = 1 + (Math.max(0, state.wave - 1) * BALANCE.WAVE.HP_SCALING);
 
-    // Define difficulty mix based on wave number
-    const weights = {
-        [EnemyVariant.Basic]: 1.0,
-        [EnemyVariant.Fast]: 0.0,
-        [EnemyVariant.Tank]: 0.0
-    };
-
-    if (state.wave >= 10) {
-        // High difficulty mix
-        weights[EnemyVariant.Basic] = 0.4;
-        weights[EnemyVariant.Fast] = 0.4;
-        weights[EnemyVariant.Tank] = 0.2;
-    } else if (state.wave >= 5) {
-        // Introduce Tanks
-        weights[EnemyVariant.Basic] = 0.6;
-        weights[EnemyVariant.Fast] = 0.3;
-        weights[EnemyVariant.Tank] = 0.1;
-    } else if (state.wave >= 3) {
-        // Introduce Fast enemies
-        weights[EnemyVariant.Basic] = 0.8;
-        weights[EnemyVariant.Fast] = 0.2;
-    } 
-    // Waves 1-2 remain 100% Basic
-
-    state.waveEnemyWeights = weights;
+    // Define difficulty mix based on wave number (Centralized config)
+    state.waveEnemyWeights = getWaveEnemyWeights(state.wave);
 
     // Reset flags
     state.waveCleared = false;
     state.waveActive = false;
     
-    console.log(`Wave ${state.wave} Prepared. Budget: ${state.enemiesRemainingInWave}, Difficulty: ${state.difficultyMultiplier.toFixed(2)}x`);
+    console.log(`Wave ${state.wave} Prepared. Boss: ${state.isBossWave}, Budget: ${state.enemiesRemainingInWave}, Difficulty: ${state.difficultyMultiplier.toFixed(2)}x`);
   }
 }

@@ -9,6 +9,9 @@ export class PlayerSystem implements System {
     const player = state.player;
     if (!player) return;
 
+    // Reset Speed Multiplier (Hazards will re-apply it if necessary)
+    player.speedMultiplier = 1.0;
+
     // 0. Update Timers
     if (player.invulnerabilityTimer > 0) {
       player.invulnerabilityTimer -= dt;
@@ -38,6 +41,19 @@ export class PlayerSystem implements System {
             player.reloadTimer = player.maxReloadTime;
         }
     }
+    
+    // NOTE: Hazard Slow effect is applied here implicitly. 
+    // The actual collision detection to SET speedMultiplier happens in DamageSystem (or CollisionSystem logic)
+    // BUT we must ensure the player updates AFTER that check, or check it here.
+    // For simplicity, we will check Hazard Overlap right here before movement.
+    const hazards = state.entityManager.getByType(EntityType.Hazard);
+    for (const h of hazards) {
+        const dist = Vec2.dist(player.position, h.position);
+        if (dist < h.radius + player.radius) {
+            player.speedMultiplier = 0.5; // 50% slow
+            break; // Only apply once
+        }
+    }
 
     // 1. Movement Logic
     const direction = { x: 0, y: 0 };
@@ -47,9 +63,11 @@ export class PlayerSystem implements System {
     if (input.right) direction.x += 1;
 
     // Normalize and apply speed
-    // Use player.speed which might be upgraded
+    // Use player.speed which might be upgraded, combined with multiplier
     const normalizedDir = Vec2.normalize(direction);
-    player.velocity = Vec2.scale(normalizedDir, player.speed);
+    const finalSpeed = player.speed * player.speedMultiplier;
+    
+    player.velocity = Vec2.scale(normalizedDir, finalSpeed);
 
     // Apply Velocity to Position
     player.position.x += player.velocity.x * dt;

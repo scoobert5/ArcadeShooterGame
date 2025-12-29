@@ -1,5 +1,5 @@
 import React from 'react';
-import { UpgradeDefinition } from '../../systems/UpgradeSystem';
+import { UpgradeDefinition } from '../../data/upgrades';
 import { UpgradeRarity } from '../../entities/types';
 import { Zap, Crosshair, Gauge, Star, Heart } from 'lucide-react';
 

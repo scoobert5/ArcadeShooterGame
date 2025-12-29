@@ -1,8 +1,10 @@
 import React from 'react';
-import { CHAINS, UpgradeSystem } from '../../systems/UpgradeSystem';
+import { UpgradeSystem } from '../../systems/UpgradeSystem';
+import { CHAINS } from '../../data/upgrades';
+import { getUpgradeCost } from '../../config/balance';
 import { UpgradeRarity } from '../../entities/types';
 import { GameState } from '../../core/GameState';
-import { Lock, Coins, ArrowUpCircle, PlayCircle } from 'lucide-react';
+import { Coins, ArrowUpCircle, PlayCircle } from 'lucide-react';
 
 interface UpgradeShopProps {
   state: GameState;
@@ -12,7 +14,6 @@ interface UpgradeShopProps {
 
 export const UpgradeShop: React.FC<UpgradeShopProps> = ({ state, onBuy, onClose }) => {
   const currentScore = state.score;
-  const currentWave = state.wave;
 
   const getRarityColor = (rarity: UpgradeRarity) => {
     switch (rarity) {
@@ -60,9 +61,7 @@ export const UpgradeShop: React.FC<UpgradeShopProps> = ({ state, onBuy, onClose 
                     const currentLevel = state.ownedUpgrades.get(chain.id) || 0;
                     const isMaxed = currentLevel >= chain.tiers.length;
                     const nextTier = !isMaxed ? chain.tiers[currentLevel] : null;
-                    const cost = !isMaxed ? UpgradeSystem.getUpgradeCost(currentLevel) : 0;
-                    const unlockWave = !isMaxed ? UpgradeSystem.getUnlockWave(currentLevel) : 0;
-                    const isLocked = currentWave < unlockWave;
+                    const cost = !isMaxed ? getUpgradeCost(currentLevel) : 0;
                     const canAfford = currentScore >= cost;
 
                     return (
@@ -71,7 +70,7 @@ export const UpgradeShop: React.FC<UpgradeShopProps> = ({ state, onBuy, onClose 
                             className={`
                                 relative bg-slate-950 border border-slate-800 rounded-xl p-5 flex flex-col gap-3 transition-all duration-200
                                 ${isMaxed ? 'opacity-50 grayscale' : ''}
-                                ${!isMaxed && !isLocked && canAfford ? 'hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 hover:-translate-y-1' : ''}
+                                ${!isMaxed && canAfford ? 'hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 hover:-translate-y-1' : ''}
                             `}
                         >
                             <div className="flex justify-between items-center gap-2">
@@ -98,26 +97,19 @@ export const UpgradeShop: React.FC<UpgradeShopProps> = ({ state, onBuy, onClose 
                                     </div>
 
                                     <div className="mt-4 pt-4 border-t border-slate-800">
-                                        {isLocked ? (
-                                            <div className="flex items-center justify-center gap-2 text-red-400 font-bold bg-red-950/30 py-2 rounded">
-                                                <Lock className="w-4 h-4" />
-                                                <span>Unlocks Wave {unlockWave}</span>
-                                            </div>
-                                        ) : (
-                                            <button
-                                                onClick={() => onBuy(chain.id)}
-                                                disabled={!canAfford}
-                                                className={`
-                                                    w-full flex items-center justify-center gap-2 py-2 rounded font-bold transition-all
-                                                    ${canAfford 
-                                                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg hover:shadow-emerald-500/20 active:scale-95' 
-                                                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'}
-                                                `}
-                                            >
-                                                <Coins className="w-4 h-4" />
-                                                {cost.toLocaleString()}
-                                            </button>
-                                        )}
+                                        <button
+                                            onClick={() => onBuy(chain.id)}
+                                            disabled={!canAfford}
+                                            className={`
+                                                w-full flex items-center justify-center gap-2 py-2 rounded font-bold transition-all
+                                                ${canAfford 
+                                                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg hover:shadow-emerald-500/20 active:scale-95' 
+                                                    : 'bg-slate-800 text-slate-500 cursor-not-allowed'}
+                                            `}
+                                        >
+                                            <Coins className="w-4 h-4" />
+                                            {cost.toLocaleString()}
+                                        </button>
                                     </div>
                                 </>
                             ) : null}

@@ -1,6 +1,7 @@
 import { EntityManager } from '../entities/EntityManager';
 import { PlayerEntity, EnemyEntity, ProjectileEntity, EntityType, EnemyVariant } from '../entities/types';
 import { ENEMY_SPAWN_RATE, GAME_WIDTH, GAME_HEIGHT } from '../utils/constants';
+import { SpatialHashGrid } from '../utils/spatialHash';
 
 export enum GameStatus {
   Menu = 'menu',
@@ -8,7 +9,8 @@ export enum GameStatus {
   Paused = 'paused',
   GameOver = 'game_over',
   WaveIntro = 'wave_intro', // Countdown before wave starts
-  Shop = 'shop' // Upgrade Shop (Opens between waves)
+  Shop = 'shop', // Upgrade Shop (Opens between waves)
+  DevConsole = 'dev_console' // Developer Testing Console
 }
 
 export interface HitEvent {
@@ -21,10 +23,17 @@ export interface PlayerHitEvent {
   enemy: EnemyEntity;
 }
 
+export interface PlayerProjectileCollisionEvent {
+    player: PlayerEntity;
+    projectile: ProjectileEntity;
+}
+
 export interface WaveWeights {
   [EnemyVariant.Basic]: number;
   [EnemyVariant.Fast]: number;
   [EnemyVariant.Tank]: number;
+  [EnemyVariant.Shooter]: number; // Added Shooter
+  [EnemyVariant.Boss]: number;
 }
 
 /**
@@ -34,6 +43,8 @@ export interface WaveWeights {
  */
 export class GameState {
   entityManager: EntityManager;
+  spatialHash: SpatialHashGrid; // Broadphase collision optimization
+
   status: GameStatus;
   previousStatus: GameStatus; // Track status before pausing
   
@@ -50,6 +61,7 @@ export class GameState {
   waveCleared: boolean; // Flag to indicate wave completion (triggers upgrade/next wave)
   scoreMultiplier: number;
   difficultyMultiplier: number; // Multiplier for enemy stats based on wave
+  isBossWave: boolean; // Flag to indicate if current wave is a boss encounter
   
   enemySpawnTimer: number;
   enemiesRemainingInWave: number; // Enemies left to spawn in current wave
@@ -61,6 +73,7 @@ export class GameState {
   // Transient Events (Cleared every frame or consumed by systems)
   hitEvents: HitEvent[];
   playerHitEvents: PlayerHitEvent[];
+  playerProjectileCollisionEvents: PlayerProjectileCollisionEvent[]; // New: Enemy Projectile -> Player
   
   // Upgrade State
   // Map of upgradeId -> count owned
@@ -74,6 +87,7 @@ export class GameState {
 
   constructor() {
     this.entityManager = new EntityManager();
+    this.spatialHash = new SpatialHashGrid(64); // 64px cells (~2x max enemy diameter)
     this.status = GameStatus.Menu;
     this.previousStatus = GameStatus.Menu;
     
@@ -89,12 +103,20 @@ export class GameState {
     this.waveCleared = false;
     this.scoreMultiplier = 1;
     this.difficultyMultiplier = 1;
+    this.isBossWave = false;
     this.enemySpawnTimer = 0;
     this.enemiesRemainingInWave = 0;
-    this.waveEnemyWeights = { [EnemyVariant.Basic]: 1, [EnemyVariant.Fast]: 0, [EnemyVariant.Tank]: 0 };
+    this.waveEnemyWeights = { 
+        [EnemyVariant.Basic]: 1, 
+        [EnemyVariant.Fast]: 0, 
+        [EnemyVariant.Tank]: 0,
+        [EnemyVariant.Shooter]: 0,
+        [EnemyVariant.Boss]: 0 
+    };
     this.areUpgradesExhausted = false;
     this.hitEvents = [];
     this.playerHitEvents = [];
+    this.playerProjectileCollisionEvents = [];
     this.ownedUpgrades = new Map();
     this.pendingUpgradeIds = [];
     this.isPlayerAlive = true;
@@ -105,6 +127,7 @@ export class GameState {
    */
   reset() {
     this.entityManager.clear();
+    this.spatialHash.clear();
     this.status = GameStatus.Playing;
     this.previousStatus = GameStatus.Playing;
     this.score = 0;
@@ -114,11 +137,19 @@ export class GameState {
     this.waveCleared = false;
     this.scoreMultiplier = 1;
     this.difficultyMultiplier = 1;
+    this.isBossWave = false;
     this.enemySpawnTimer = 0; // Reset spawn timer ensures immediate spawn or wait depending on logic
     this.enemiesRemainingInWave = 0;
-    this.waveEnemyWeights = { [EnemyVariant.Basic]: 1, [EnemyVariant.Fast]: 0, [EnemyVariant.Tank]: 0 };
+    this.waveEnemyWeights = { 
+        [EnemyVariant.Basic]: 1, 
+        [EnemyVariant.Fast]: 0, 
+        [EnemyVariant.Tank]: 0,
+        [EnemyVariant.Shooter]: 0,
+        [EnemyVariant.Boss]: 0 
+    };
     this.hitEvents = [];
     this.playerHitEvents = [];
+    this.playerProjectileCollisionEvents = [];
     this.ownedUpgrades.clear();
     this.pendingUpgradeIds = [];
     this.player = null;

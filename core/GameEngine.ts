@@ -2,8 +2,9 @@ import { GameState, GameStatus } from './GameState';
 import { Loop } from './Loop';
 import { InputManager } from './InputManager';
 import { System } from '../systems/BaseSystem';
-import { PlayerEntity, EntityType } from '../entities/types';
-import { GAME_WIDTH, GAME_HEIGHT, Colors, PLAYER_RADIUS, PLAYER_SPEED, PLAYER_FIRE_RATE } from '../utils/constants';
+import { PlayerEntity, EntityType, EnemyVariant, EnemyEntity } from '../entities/types';
+import { Colors } from '../utils/constants';
+import { BALANCE } from '../config/balance';
 
 // Import Systems (Order Matters)
 import { PlayerSystem } from '../systems/PlayerSystem';
@@ -15,7 +16,7 @@ import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { WaveSystem } from '../systems/WaveSystem';
 
-type GameEventType = 'score_change' | 'game_over' | 'wave_change' | 'wave_progress' | 'player_health_change' | 'enemy_hit' | 'status_change' | 'wave_intro_timer';
+type GameEventType = 'score_change' | 'game_over' | 'wave_change' | 'wave_progress' | 'player_health_change' | 'enemy_hit' | 'status_change' | 'wave_intro_timer' | 'boss_health_change';
 type GameEventListener = (data?: any) => void;
 
 /**
@@ -39,6 +40,7 @@ export class GameEngine {
   private lastPlayerHealth: number = 100;
   private wasEscapePressed: boolean = false;
   private lastEnemiesRemaining: number = -1;
+  private lastBossHealth: number = -1;
 
   constructor() {
     this.state = new GameState();
@@ -92,22 +94,46 @@ export class GameEngine {
       }
   }
 
+  /**
+   * Main Entry Point for a new session.
+   */
   startGame() {
+    this.resetRunState();
+    this.createDefaultPlayer();
+    this.initLevel();
+    
+    this.loop.start();
+    
+    // Initial Emit
+    if (this.state.player) {
+        this.emit('score_change', this.state.score);
+        this.emit('player_health_change', { current: this.state.player.health, max: this.state.player.maxHealth });
+    }
+  }
+
+  private resetRunState() {
     this.state.reset();
     this.inputManager.reset();
-    
-    // Spawn Player with Base Stats
+    this.lastEnemiesRemaining = -1;
+    this.lastPlayerHealth = BALANCE.PLAYER.BASE_HP;
+    this.lastBossHealth = -1;
+  }
+
+  private createDefaultPlayer() {
+    // Spawn Player with Base Stats from Config
     const player: PlayerEntity = {
       id: 'player',
       type: EntityType.Player,
       position: { x: this.state.worldWidth / 2, y: this.state.worldHeight / 2 },
       velocity: { x: 0, y: 0 },
-      radius: PLAYER_RADIUS,
+      radius: 16, // Physics constant kept inline
       rotation: 0,
       color: Colors.Player,
       active: true,
-      health: 100,
-      maxHealth: 100,
+      
+      health: BALANCE.PLAYER.BASE_HP,
+      maxHealth: BALANCE.PLAYER.BASE_HP,
+      
       cooldown: 0,
       weaponLevel: 1,
       wantsToFire: false,
@@ -115,51 +141,49 @@ export class GameEngine {
       hitFlashTimer: 0,
       
       // Ammo & Reload
-      currentAmmo: 10,
-      maxAmmo: 10,
+      currentAmmo: BALANCE.PLAYER.BASE_AMMO,
+      maxAmmo: BALANCE.PLAYER.BASE_AMMO,
       isReloading: false,
       reloadTimer: 0,
-      maxReloadTime: 1.5, // 1.5 Seconds base reload time
+      maxReloadTime: BALANCE.PLAYER.RELOAD_TIME,
 
       // Ability Stats
       repulseCooldown: 0,
-      maxRepulseCooldown: 5.0, // 5 Seconds
+      maxRepulseCooldown: BALANCE.PLAYER.REPULSE_COOLDOWN,
       repulseVisualTimer: 0,
       
       // Ability Scaling
       repulseForceMult: 1.0,
-      repulseDamage: 10, // Base damage to verify upgrades
+      repulseDamage: BALANCE.PLAYER.REPULSE_DAMAGE,
       repulseDamageMult: 1.0,
 
       // Initial Upgradable Stats
-      speed: PLAYER_SPEED,
-      fireRate: PLAYER_FIRE_RATE,
-      damage: 10,
+      speed: BALANCE.PLAYER.BASE_SPEED,
+      speedMultiplier: 1.0,
+      fireRate: BALANCE.PLAYER.BASE_FIRE_RATE,
+      damage: BALANCE.PLAYER.BASE_DAMAGE,
       
       // New Offensive Stats
       projectileCount: 1,
       ricochetBounces: 0,
+      ricochetSearchRadius: BALANCE.PLAYER.BASE_RICOCHET_RADIUS,
 
       damageReduction: 0,
-      waveHealRatio: 0.15 // Start with 15% catch-up healing
+      waveHealRatio: BALANCE.WAVE.HEAL_RATIO
     };
     
     this.state.entityManager.add(player);
     this.state.player = player;
-    this.lastPlayerHealth = player.health;
-    this.lastEnemiesRemaining = -1;
-    
-    // Initialize Wave 1 via WaveSystem to ensure consistent budget/weight logic
-    // We set wave to 0 so prepareNextWave increments it to 1
-    this.state.wave = 0;
-    this.waveSystem.prepareNextWave(this.state);
-    
-    // Start with Intro
-    this.startWaveIntro();
-    
-    this.loop.start();
-    this.emit('score_change', this.state.score);
-    this.emit('player_health_change', { current: player.health, max: player.maxHealth });
+  }
+
+  private initLevel() {
+      // Initialize Wave 1 via WaveSystem to ensure consistent budget/weight logic
+      // We set wave to 0 so prepareNextWave increments it to 1
+      this.state.wave = 0;
+      this.waveSystem.prepareNextWave(this.state);
+      
+      // Start with Intro
+      this.startWaveIntro();
   }
 
   togglePause() {
@@ -174,6 +198,80 @@ export class GameEngine {
       this.inputManager.reset(); // Prevent stuck keys
       this.emit('status_change', this.state.status);
     }
+  }
+  
+  /**
+   * DEV CONSOLE: Toggles Dev Console visibility
+   */
+  toggleConsole() {
+    // If open, close it
+    if (this.state.status === GameStatus.DevConsole) {
+        this.state.status = this.state.previousStatus;
+        this.inputManager.reset();
+        this.emit('status_change', this.state.status);
+    } 
+    // If closed (and game is running/paused/shop), open it
+    else if (
+        this.state.status === GameStatus.Playing || 
+        this.state.status === GameStatus.WaveIntro || 
+        this.state.status === GameStatus.Paused || 
+        this.state.status === GameStatus.Shop
+    ) {
+        this.state.previousStatus = this.state.status;
+        this.state.status = GameStatus.DevConsole;
+        this.inputManager.reset();
+        this.emit('status_change', this.state.status);
+    }
+  }
+
+  /**
+   * DEV CONSOLE: Give Score
+   */
+  giveScore(amount: number) {
+      if (amount <= 0) return;
+      this.state.score += amount;
+      this.emit('score_change', this.state.score);
+  }
+  
+  /**
+   * DEV CONSOLE: Open Shop
+   * Transitions directly to shop state.
+   */
+  openDevShop() {
+      this.state.status = GameStatus.Shop;
+      this.inputManager.reset();
+      this.emit('status_change', this.state.status);
+  }
+
+  /**
+   * DEV CONSOLE: Jump to specific wave
+   */
+  jumpToWave(targetWave: number) {
+      if (targetWave < 1) return;
+      
+      // 1. Clear Active Entities
+      this.state.entityManager.removeByType(EntityType.Enemy);
+      this.state.entityManager.removeByType(EntityType.Projectile);
+      this.state.entityManager.removeByType(EntityType.Particle);
+      this.state.entityManager.removeByType(EntityType.Hazard);
+      
+      // 2. Setup Wave Counter
+      // prepareNextWave increments the wave, so we set it to target - 1
+      this.state.wave = targetWave - 1;
+      
+      // 3. Prepare Wave Logic (Budgets, Boss Checks, etc.)
+      this.waveSystem.prepareNextWave(this.state);
+      
+      // 4. Refill Ammo (Reset Player State for fair test)
+      if (this.state.player) {
+          this.state.player.currentAmmo = this.state.player.maxAmmo;
+          this.state.player.isReloading = false;
+          this.state.player.reloadTimer = 0;
+          this.state.player.wantsToFire = false;
+      }
+      
+      // 5. Start Wave Intro
+      this.startWaveIntro();
   }
 
   /**
@@ -250,8 +348,11 @@ export class GameEngine {
     const input = this.inputManager.getState();
     
     // Edge Detection for Escape Key
-    if (input.escape && !this.wasEscapePressed) {
-      this.togglePause();
+    // Disabled pause toggle via Escape if in DevConsole (handled by console UI)
+    if (this.state.status !== GameStatus.DevConsole) {
+        if (input.escape && !this.wasEscapePressed) {
+          this.togglePause();
+        }
     }
     this.wasEscapePressed = input.escape;
 
@@ -276,6 +377,7 @@ export class GameEngine {
     }
 
     // 3. Guard: Only update game logic if Playing
+    // This implicitly pauses the game if Status is DevConsole or Paused
     if (this.state.status !== GameStatus.Playing) return;
 
     const previousScore = this.state.score;
@@ -303,8 +405,9 @@ export class GameEngine {
     if (this.state.waveCleared) {
         // Wave Completed!
 
-        // 1. Clear Projectiles
+        // 1. Clear Projectiles & Hazards
         this.state.entityManager.removeByType(EntityType.Projectile);
+        this.state.entityManager.removeByType(EntityType.Hazard);
 
         // 2. Prepare Next Wave Data (Increments wave counter)
         this.waveSystem.prepareNextWave(this.state);
@@ -320,7 +423,7 @@ export class GameEngine {
         return; 
     }
 
-    // 8. Reactivity
+    // 8. Reactivity & Events
     if (this.state.score !== previousScore) {
       this.emit('score_change', this.state.score);
     }
@@ -354,6 +457,32 @@ export class GameEngine {
     // Hit Event Feedback
     if (this.state.hitEvents.length > 0) {
         this.emit('enemy_hit');
+    }
+
+    // Boss Health Tracking
+    if (this.state.isBossWave) {
+        // Find Boss
+        const boss = this.state.entityManager.getAll().find(e => e.type === EntityType.Enemy && (e as EnemyEntity).variant === EnemyVariant.Boss) as EnemyEntity | undefined;
+        
+        if (boss) {
+            // Boss exists
+            if (boss.health !== this.lastBossHealth) {
+                this.emit('boss_health_change', { current: boss.health, max: boss.maxHealth, active: true });
+                this.lastBossHealth = boss.health;
+            }
+        } else {
+            // No boss found (dead or not spawned yet)
+            if (this.lastBossHealth !== -1) {
+                this.emit('boss_health_change', { current: 0, max: 100, active: false });
+                this.lastBossHealth = -1;
+            }
+        }
+    } else {
+        // Not a boss wave, ensure UI is clear
+        if (this.lastBossHealth !== -1) {
+             this.emit('boss_health_change', { current: 0, max: 100, active: false });
+             this.lastBossHealth = -1;
+        }
     }
   }
 

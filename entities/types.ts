@@ -5,7 +5,8 @@ export enum EntityType {
   Enemy = 'enemy',
   Projectile = 'projectile',
   Particle = 'particle',
-  Upgrade = 'upgrade'
+  Upgrade = 'upgrade',
+  Hazard = 'hazard' // New entity type for ground zones
 }
 
 export enum UpgradeRarity {
@@ -18,7 +19,9 @@ export enum UpgradeRarity {
 export enum EnemyVariant {
   Basic = 'basic',
   Fast = 'fast',
-  Tank = 'tank'
+  Tank = 'tank',
+  Boss = 'boss',
+  Shooter = 'shooter' // New Ranged Enemy
 }
 
 /**
@@ -65,9 +68,11 @@ export interface PlayerEntity extends BaseEntity {
   // Offensive Stats
   projectileCount: number; // Number of projectiles fired per shot (Multi-Shot)
   ricochetBounces: number; // How many times projectiles bounce (Ricochet)
+  ricochetSearchRadius: number; // Max distance to look for next ricochet target
   
   // Upgradable Stats
   speed: number;
+  speedMultiplier: number; // Transient multiplier applied per frame (e.g. slows)
   fireRate: number; // Seconds between shots
   damage: number;
   
@@ -75,6 +80,9 @@ export interface PlayerEntity extends BaseEntity {
   damageReduction: number; // Percentage reduction (0.0 to 1.0)
   waveHealRatio: number; // Percentage of MISSING health to heal (0.0 to 1.0)
 }
+
+// Added 'telegraph_hazard' and 'spawn_hazard'
+export type BossAiState = 'approach' | 'commit' | 'anchor' | 'telegraph_slam' | 'slam' | 'telegraph_charge' | 'charge' | 'telegraph_hazard' | 'spawn_hazard' | 'recovery';
 
 export interface EnemyEntity extends BaseEntity {
   type: EntityType.Enemy;
@@ -85,13 +93,20 @@ export interface EnemyEntity extends BaseEntity {
   value: number;  // Score value when destroyed
   
   // Physics
-  knockback: Vector2; // Separate vector for impulse forces (decays over time)
+  knockback: Vector2; // Separate vector for attack impulse forces (decays over time)
 
   // AI Behavior State
-  aiState: 'approach' | 'commit';
+  aiState: BossAiState; 
   aiStateTimer: number;
   orbitDir: number; // 1 (CW) or -1 (CCW)
   hasEnteredArena: boolean; // Tracks if the enemy has fully entered the screen bounds
+  
+  // Boss Specifics
+  attackCooldown: number;
+  chargeVector?: Vector2; // Direction locked in for charge
+  
+  // Ranged & Boss Pulse Logic
+  shootTimer?: number; 
 }
 
 export interface ProjectileEntity extends BaseEntity {
@@ -99,9 +114,11 @@ export interface ProjectileEntity extends BaseEntity {
   damage: number;
   lifetime: number; // Seconds remaining until despawn
   ownerId: string;  // ID of the entity that fired this projectile
+  isEnemyProjectile: boolean; // True if fired by an enemy (hurts player, ignored by enemies)
   
   // Ricochet State
   bouncesRemaining: number;
+  ricochetSearchRadius: number; // Inherited from player at moment of firing
   hitEntityIds: string[]; // Track which enemies have been hit to prevent bouncing back
 }
 
@@ -115,4 +132,12 @@ export interface ParticleEntity extends BaseEntity {
   width: number;
 }
 
-export type GameEntity = PlayerEntity | EnemyEntity | ProjectileEntity | ParticleEntity;
+export interface HazardEntity extends BaseEntity {
+    type: EntityType.Hazard;
+    damage: number;
+    lifetime: number;
+    maxLifetime: number;
+    tickTimer: number; // Controls damage tick rate
+}
+
+export type GameEntity = PlayerEntity | EnemyEntity | ProjectileEntity | ParticleEntity | HazardEntity;

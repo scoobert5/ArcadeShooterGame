@@ -32,22 +32,32 @@ export class ProjectileSystem implements System {
             }
 
             const count = player.projectileCount;
-            // Spread logic: Arc the shots slightly
-            // 0.1 radians is approx 5.7 degrees per shot spacing
-            const spreadStep = 0.1; 
+            
+            // REVERTED: Standard Cone Spread
+            // Distribute shots evenly across a small arc centered on aim direction
+            const spreadTotal = 0.35; // ~20 degrees total spread
             
             for (let i = 0; i < count; i++) {
-                // Calculate offset angle so the group is centered on aim direction
-                const angleOffset = (i - (count - 1) / 2) * spreadStep;
-                const finalAngle = player.rotation + angleOffset;
+                let finalAngle = player.rotation;
+                
+                if (count > 1) {
+                    const startAngle = -spreadTotal / 2;
+                    const step = spreadTotal / (count - 1);
+                    finalAngle += startAngle + (step * i);
+                }
 
                 const vx = Math.cos(finalAngle) * PROJECTILE_SPEED;
                 const vy = Math.sin(finalAngle) * PROJECTILE_SPEED;
+                
+                // Spawn slightly forward from player center
+                const spawnOffset = player.radius;
+                const spawnX = player.position.x + (Math.cos(finalAngle) * spawnOffset);
+                const spawnY = player.position.y + (Math.sin(finalAngle) * spawnOffset);
 
                 const projectile: ProjectileEntity = {
                   id: `proj_${Date.now()}_${i}_${Math.random()}`,
                   type: EntityType.Projectile,
-                  position: { x: player.position.x, y: player.position.y }, 
+                  position: { x: spawnX, y: spawnY }, 
                   velocity: { x: vx, y: vy },
                   radius: PROJECTILE_RADIUS,
                   rotation: finalAngle,
@@ -56,8 +66,10 @@ export class ProjectileSystem implements System {
                   damage: player.damage,
                   lifetime: PROJECTILE_LIFETIME,
                   ownerId: player.id,
+                  isEnemyProjectile: false,
                   // Init Ricochet properties
                   bouncesRemaining: player.ricochetBounces,
+                  ricochetSearchRadius: player.ricochetSearchRadius, // Pass player stat to projectile
                   hitEntityIds: [],
                 };
 

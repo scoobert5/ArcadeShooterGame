@@ -1,11 +1,49 @@
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
-import { EntityType, EnemyEntity, EnemyVariant, ProjectileEntity, ParticleEntity } from '../entities/types';
+import { EntityType, EnemyEntity, EnemyVariant, ProjectileEntity, ParticleEntity, HazardEntity } from '../entities/types';
 import { Vec2 } from '../utils/math';
 import { Colors } from '../utils/constants';
 
 export class DamageSystem implements System {
   update(dt: number, state: GameState) {
+    // 0. Update Hazards (Damage & Lifetime)
+    const hazards = state.entityManager.getByType(EntityType.Hazard) as HazardEntity[];
+    const player = state.player;
+
+    for (const hazard of hazards) {
+        hazard.lifetime -= dt;
+        if (hazard.lifetime <= 0) {
+            hazard.active = false;
+            continue;
+        }
+
+        // Damage Tick on Player
+        if (player && player.active) {
+            const dist = Vec2.dist(hazard.position, player.position);
+            // Check radius overlap
+            if (dist < hazard.radius + player.radius) {
+                // Tick Timer Logic
+                if (hazard.tickTimer > 0) {
+                    hazard.tickTimer -= dt;
+                }
+                
+                if (hazard.tickTimer <= 0) {
+                    // Deal Damage
+                    if (player.invulnerabilityTimer <= 0) {
+                         const damage = hazard.damage;
+                         const mitigation = player.damageReduction || 0;
+                         const actualDamage = Math.max(1, damage * (1 - mitigation));
+                         
+                         player.health -= actualDamage;
+                         // No Invulnerability timer for hazards, just tick rate
+                         hazard.tickTimer = 0.5; // Tick every 0.5s
+                         player.hitFlashTimer = 0.1;
+                    }
+                }
+            }
+        }
+    }
+
     // 1. Process Projectile Hits on Enemies
     for (const hit of state.hitEvents) {
       const { projectile, enemy } = hit;
@@ -41,7 +79,7 @@ export class DamageSystem implements System {
       }
     }
 
-    // 2. Process Enemy Hits on Player
+    // 2. Process Enemy Hits on Player (Body Collision)
     for (const hit of state.playerHitEvents) {
       const { player, enemy } = hit;
 
@@ -85,6 +123,39 @@ export class DamageSystem implements System {
         }
       }
     }
+    
+    // 3. Process Enemy Projectile Hits on Player
+    for (const hit of state.playerProjectileCollisionEvents) {
+        const { player, projectile } = hit;
+        if (!player.active || !projectile.active) continue;
+
+        if (player.invulnerabilityTimer <= 0) {
+            const rawDamage = projectile.damage;
+            const mitigation = player.damageReduction || 0;
+            const actualDamage = Math.max(1, rawDamage * (1 - mitigation));
+
+            player.health -= actualDamage;
+            player.invulnerabilityTimer = 0.35;
+            player.hitFlashTimer = 0.2;
+            
+            // Destroy projectile
+            projectile.active = false;
+
+            if (player.health <= 0) {
+                player.health = 0;
+                player.active = false;
+                state.isPlayerAlive = false;
+            }
+        }
+    }
+
+    
+    // Check player death from hazard ticks
+    if (player && player.health <= 0 && player.active) {
+        player.health = 0;
+        player.active = false;
+        state.isPlayerAlive = false;
+    }
   }
 
   private handleRicochet(state: GameState, projectile: ProjectileEntity, hitEnemy: EnemyEntity) {
@@ -101,21 +172,33 @@ export class DamageSystem implements System {
           const candidates = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
           let closest: EnemyEntity | null = null;
           let minDst = Infinity;
+          
+          const maxDist = projectile.ricochetSearchRadius || 200; // Fallback default
 
           for (const cand of candidates) {
               // Conditions:
               // 1. Must be active (alive)
               // 2. Must NOT have been hit by this chain already (avoids A->B->A loops)
               if (!cand.active || hitIds.includes(cand.id)) continue;
+              
+              // 3. Must be ON-SCREEN (Ricochet Containment)
+              if (cand.position.x < 0 || cand.position.x > state.worldWidth || 
+                  cand.position.y < 0 || cand.position.y > state.worldHeight) {
+                  continue;
+              }
 
               const d = Vec2.dist(currentSource.position, cand.position);
+              
+              // 4. Must be within Search Radius (Local chaining)
+              if (d > maxDist) continue;
+
               if (d < minDst) {
                   minDst = d;
                   closest = cand;
               }
           }
 
-          // If no valid target found, stop chaining
+          // If no valid target found within radius, stop chaining
           if (!closest) break;
 
           // --- Process the Chain Hit ---
@@ -133,6 +216,7 @@ export class DamageSystem implements System {
           closest.hitFlashTimer = 0.1;
 
           // 3. Create Visual Trail (Particle)
+          // Polished: Faster fade (0.15s), distinct style
           const particle: ParticleEntity = {
               id: `part_rico_${Date.now()}_${Math.random()}`,
               type: EntityType.Particle,
@@ -145,9 +229,9 @@ export class DamageSystem implements System {
               active: true,
               from: { ...currentSource.position },
               to: { ...closest.position },
-              lifetime: 0.25, // 250ms fade
-              maxLifetime: 0.25,
-              width: 3 // Slightly thicker for visibility
+              lifetime: 0.15, // 150ms fade (Snappier)
+              maxLifetime: 0.15,
+              width: 2 // Thinner for a sharper look
           };
           state.entityManager.add(particle);
 

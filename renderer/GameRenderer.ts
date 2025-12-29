@@ -1,6 +1,6 @@
 import { GameState, GameStatus } from '../core/GameState';
 import { Colors } from '../utils/constants';
-import { EntityType, EnemyEntity, EnemyVariant, PlayerEntity, ProjectileEntity, ParticleEntity } from '../entities/types';
+import { EntityType, EnemyEntity, EnemyVariant, PlayerEntity, ProjectileEntity, ParticleEntity, HazardEntity } from '../entities/types';
 
 /**
  * Handles all canvas drawing operations.
@@ -37,7 +37,14 @@ export class GameRenderer {
     // Render all active entities
     const entities = state.entityManager.getAll();
     
-    // Separate drawing pass for particles (trails) behind everything
+    // 1. Background Layer: Hazards (Draw first so they are on floor)
+    for (const entity of entities) {
+        if (entity.type === EntityType.Hazard) {
+            this.drawHazard(entity as HazardEntity);
+        }
+    }
+
+    // 2. Middle Layer: Particles
     this.ctx.save();
     for (const entity of entities) {
         if (entity.type === EntityType.Particle) {
@@ -46,14 +53,15 @@ export class GameRenderer {
     }
     this.ctx.restore();
 
+    // 3. Top Layer: Main Entities
     for (const entity of entities) {
       // Don't draw player during Wave Intro (hidden until start)
       if (state.status === GameStatus.WaveIntro && entity.type === EntityType.Player) {
           continue;
       }
       
-      // Don't draw particles in the main entity loop (already drawn)
-      if (entity.type === EntityType.Particle) continue;
+      // Skip already drawn types
+      if (entity.type === EntityType.Particle || entity.type === EntityType.Hazard) continue;
       
       this.drawEntity(entity);
     }
@@ -78,6 +86,35 @@ export class GameRenderer {
   private clear() {
     this.ctx.fillStyle = Colors.Background;
     this.ctx.fillRect(0, 0, this.width, this.height);
+  }
+  
+  private drawHazard(hazard: HazardEntity) {
+      this.ctx.save();
+      this.ctx.translate(hazard.position.x, hazard.position.y);
+      
+      const pulse = Math.sin(Date.now() / 200) * 0.1 + 0.9;
+      
+      // Outer glow
+      this.ctx.fillStyle = 'rgba(16, 185, 129, 0.2)'; // Emerald
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, hazard.radius * pulse, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      // Inner core
+      this.ctx.fillStyle = 'rgba(16, 185, 129, 0.4)';
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, hazard.radius * 0.7 * pulse, 0, Math.PI * 2);
+      this.ctx.fill();
+      
+      // Warning Border
+      this.ctx.strokeStyle = 'rgba(16, 185, 129, 0.8)';
+      this.ctx.lineWidth = 2;
+      this.ctx.setLineDash([5, 5]);
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, hazard.radius, 0, Math.PI * 2);
+      this.ctx.stroke();
+
+      this.ctx.restore();
   }
 
   private drawParticle(particle: ParticleEntity) {
@@ -114,16 +151,33 @@ export class GameRenderer {
     if (entity.type === EntityType.Enemy) {
         this.drawEnemyShape(entity as EnemyEntity);
         
-        // Draw direction indicator for Enemy (Readability improvement)
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'; // Subtler than player
-        this.ctx.lineWidth = 2;
+        // Draw direction indicator/Telegraphs for Enemy
+        if (entity.variant !== EnemyVariant.Boss) {
+            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, 0);
+            this.ctx.lineTo(entity.radius * 0.8, 0);
+            this.ctx.stroke();
+        }
+
+    } else if (entity.type === EntityType.Projectile && entity.isEnemyProjectile) {
+        // Enemy Projectile (Diamond/Star shape)
         this.ctx.beginPath();
-        this.ctx.moveTo(0, 0);
-        this.ctx.lineTo(entity.radius * 0.8, 0); // Slightly shorter than radius to keep it inside/near
-        this.ctx.stroke();
+        const r = entity.radius;
+        this.ctx.moveTo(r, 0);
+        this.ctx.lineTo(0, r);
+        this.ctx.lineTo(-r, 0);
+        this.ctx.lineTo(0, -r);
+        this.ctx.closePath();
+        this.ctx.fill();
+
+        // Glow
+        this.ctx.shadowBlur = 5;
+        this.ctx.shadowColor = entity.color;
 
     } else {
-        // Default Circle (Player, Projectile, Basic Enemy fallback)
+        // Default Circle (Player, Player Projectile, Basic Enemy fallback)
         this.ctx.beginPath();
         this.ctx.arc(0, 0, entity.radius, 0, Math.PI * 2);
         this.ctx.fill();
@@ -218,6 +272,87 @@ export class GameRenderer {
 
   private drawEnemyShape(enemy: EnemyEntity) {
     switch (enemy.variant) {
+        case EnemyVariant.Boss:
+             // Big Hexagon with Core
+             this.ctx.beginPath();
+             const sides = 6;
+             const r = enemy.radius;
+             for (let i = 0; i < sides; i++) {
+                 const angle = (i * 2 * Math.PI) / sides;
+                 this.ctx.lineTo(r * Math.cos(angle), r * Math.sin(angle));
+             }
+             this.ctx.closePath();
+             
+             // Color logic based on State
+             if (enemy.aiState === 'telegraph_slam' || enemy.aiState === 'telegraph_charge') {
+                 this.ctx.fillStyle = '#fbbf24'; // Warning Yellow
+             } else if (enemy.aiState === 'recovery') {
+                 this.ctx.fillStyle = '#64748b'; // Gray/Vulnerable
+             } else if (enemy.aiState === 'charge') {
+                 this.ctx.fillStyle = '#fca5a5'; // Bright Red charging
+             } else {
+                 this.ctx.fillStyle = enemy.color;
+             }
+             this.ctx.fill();
+
+             // Outline
+             this.ctx.strokeStyle = '#fff';
+             this.ctx.lineWidth = 4;
+             this.ctx.stroke();
+
+             // VISUALS: Attack Telegraphs
+             if (enemy.aiState === 'telegraph_slam') {
+                 // Draw Area of Effect
+                 this.ctx.save();
+                 this.ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+                 this.ctx.lineWidth = 2;
+                 this.ctx.setLineDash([10, 10]);
+                 this.ctx.beginPath();
+                 this.ctx.arc(0, 0, 280, 0, Math.PI * 2); // SLAM_RADIUS
+                 this.ctx.stroke();
+                 this.ctx.restore();
+             }
+             
+             if (enemy.aiState === 'telegraph_charge') {
+                 // STATIC ARROW RENDERING
+                 // We use the locked chargeVector if available, otherwise fallback to current rotation
+                 const rot = enemy.chargeVector 
+                     ? Math.atan2(enemy.chargeVector.y, enemy.chargeVector.x)
+                     : enemy.rotation;
+
+                 this.ctx.save();
+                 // Rotate context to align with charge direction
+                 this.ctx.rotate(rot - enemy.rotation); // Relative to current entity rotation (which is 0 in drawEntity context usually)
+                 
+                 this.ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)';
+                 this.ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
+                 this.ctx.lineWidth = 3;
+                 
+                 const arrowLen = 500;
+                 const arrowWidth = 60;
+                 
+                 this.ctx.beginPath();
+                 this.ctx.moveTo(r + 10, -arrowWidth/2);
+                 this.ctx.lineTo(r + arrowLen, -arrowWidth/2);
+                 this.ctx.lineTo(r + arrowLen, -arrowWidth);
+                 this.ctx.lineTo(r + arrowLen + 50, 0); // Tip
+                 this.ctx.lineTo(r + arrowLen, arrowWidth);
+                 this.ctx.lineTo(r + arrowLen, arrowWidth/2);
+                 this.ctx.lineTo(r + 10, arrowWidth/2);
+                 this.ctx.closePath();
+                 
+                 this.ctx.fill();
+                 this.ctx.stroke();
+                 this.ctx.restore();
+             }
+             
+             // Inner Core (Pulsing?)
+             this.ctx.fillStyle = 'rgba(0,0,0,0.5)';
+             this.ctx.beginPath();
+             this.ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2);
+             this.ctx.fill();
+             break;
+
         case EnemyVariant.Fast:
             // Triangle / Arrowhead
             this.ctx.beginPath();
@@ -241,6 +376,27 @@ export class GameRenderer {
             this.ctx.fillStyle = 'rgba(0,0,0,0.3)';
             this.ctx.beginPath();
             this.ctx.rect(-size/2, -size/2, size, size);
+            this.ctx.fill();
+            break;
+            
+        case EnemyVariant.Shooter:
+            // Diamond Shape
+            this.ctx.beginPath();
+            this.ctx.moveTo(enemy.radius, 0);
+            this.ctx.lineTo(0, enemy.radius * 0.7);
+            this.ctx.lineTo(-enemy.radius, 0);
+            this.ctx.lineTo(0, -enemy.radius * 0.7);
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // Inner Diamond
+            this.ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            this.ctx.beginPath();
+            this.ctx.moveTo(enemy.radius * 0.5, 0);
+            this.ctx.lineTo(0, enemy.radius * 0.35);
+            this.ctx.lineTo(-enemy.radius * 0.5, 0);
+            this.ctx.lineTo(0, -enemy.radius * 0.35);
+            this.ctx.closePath();
             this.ctx.fill();
             break;
 
