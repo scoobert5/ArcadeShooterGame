@@ -157,6 +157,25 @@ export class GameEngine {
       repulseDamage: BALANCE.PLAYER.REPULSE_DAMAGE,
       repulseDamageMult: 1.0,
 
+      // Dash Ability
+      dashUnlocked: false, // Default Locked
+      dashCooldown: 0,
+      maxDashCooldown: BALANCE.PLAYER.DASH_COOLDOWN,
+      dashCharges: 0,
+      maxDashCharges: 0,
+      isDashing: false,
+      dashDuration: BALANCE.PLAYER.DASH_DURATION,
+      dashTimer: 0,
+      dashTrailTimer: 0,
+      dashTrailDuration: 0.5,
+      dashTrailDamage: BALANCE.PLAYER.DASH_TRAIL_DAMAGE,
+      dashFatigue: 0,
+
+      // Shield Ability
+      currentShields: 0,
+      maxShields: 0, // 0 = Locked
+      shieldHitAnimTimer: 0,
+
       // Initial Upgradable Stats
       speed: BALANCE.PLAYER.BASE_SPEED,
       speedMultiplier: 1.0,
@@ -165,6 +184,8 @@ export class GameEngine {
       
       // New Offensive Stats
       projectileCount: 1,
+      projectileStreams: 1,
+      splitAngle: 0.3,
       ricochetBounces: 0,
       ricochetSearchRadius: BALANCE.PLAYER.BASE_RICOCHET_RADIUS,
 

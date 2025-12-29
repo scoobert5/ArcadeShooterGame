@@ -65,8 +65,29 @@ export interface PlayerEntity extends BaseEntity {
   repulseDamage: number;
   repulseDamageMult: number;
 
+  // Dash Ability
+  dashUnlocked: boolean;
+  dashCooldown: number;
+  maxDashCooldown: number;
+  dashCharges: number;
+  maxDashCharges: number;
+  isDashing: boolean;
+  dashDuration: number; // How long the velocity override lasts
+  dashTimer: number;
+  dashTrailTimer: number; // Controls frequency of trail spawn
+  dashTrailDuration: number; // How long trail lasts (upgradeable)
+  dashTrailDamage: number;
+  dashFatigue: number; // 0 to 1, increases with rapid use
+
+  // Shield Ability
+  currentShields: number;
+  maxShields: number; // 0 means locked
+  shieldHitAnimTimer: number; // Visual pop for shield hit
+
   // Offensive Stats
-  projectileCount: number; // Number of projectiles fired per shot (Multi-Shot)
+  projectileCount: number; // Number of projectiles fired per stream (Multi-Shot)
+  projectileStreams: number; // Number of streams (Split-Shot)
+  splitAngle: number; // Total arc in radians for split shot (0 = parallel)
   ricochetBounces: number; // How many times projectiles bounce (Ricochet)
   ricochetSearchRadius: number; // Max distance to look for next ricochet target
   
@@ -138,6 +159,10 @@ export interface HazardEntity extends BaseEntity {
     lifetime: number;
     maxLifetime: number;
     tickTimer: number; // Controls damage tick rate
+    isPlayerOwned?: boolean; // For Dash Trails
+    style?: 'circle' | 'line'; // Visual style
+    from?: Vector2; // Start point for line style
+    to?: Vector2;   // End point for line style
 }
 
 export type GameEntity = PlayerEntity | EnemyEntity | ProjectileEntity | ParticleEntity | HazardEntity;

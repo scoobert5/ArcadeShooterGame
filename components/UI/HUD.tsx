@@ -1,5 +1,5 @@
 import React from 'react';
-import { Target, AlertTriangle } from 'lucide-react';
+import { Target } from 'lucide-react';
 
 interface HUDProps {
   score: number;
@@ -15,10 +15,7 @@ export const HUD: React.FC<HUDProps> = ({
     score, 
     wave, 
     enemiesRemaining, 
-    ammo, 
-    maxAmmo, 
-    isReloading,
-    canShop
+    // Props still passed but unused due to visual overhaul
 }) => {
   return (
     <div className="absolute inset-0 pointer-events-none p-6 z-50 flex flex-col justify-between">
@@ -53,38 +50,10 @@ export const HUD: React.FC<HUDProps> = ({
             </div>
         </div>
       </div>
-
-      {/* CENTER: Reload Warning (Critical Context) */}
-      {isReloading && (
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 mt-20">
-              <div className="flex items-center gap-2 bg-red-600/20 backdrop-blur-sm border border-red-500/50 px-4 py-1 rounded text-red-200 font-bold tracking-widest text-sm">
-                  <AlertTriangle className="w-4 h-4 animate-pulse" />
-                  RELOADING...
-              </div>
-          </div>
-      )}
       
-      {/* BOTTOM ROW */}
+      {/* BOTTOM ROW - Cleared for player-centric UI */}
       <div className="flex justify-between items-end w-full">
-          
-          {/* Bottom Left: Ammo & Reload Status */}
-          <div className="flex flex-col gap-2 mb-2">
-            <div className={`bg-slate-900/80 backdrop-blur-sm px-6 py-4 rounded-2xl border-l-4 ${ammo === 0 || isReloading ? 'border-red-500' : 'border-emerald-500'} shadow-xl min-w-[180px]`}>
-                <div className="flex justify-between items-end mb-1">
-                    <span className="text-slate-400 text-xs font-bold tracking-widest uppercase">AMMO</span>
-                    {!isReloading && <span className="text-slate-500 text-[10px] font-bold tracking-widest uppercase">PRESS [R]</span>}
-                </div>
-                <div className="flex items-baseline gap-1">
-                    <span className={`text-4xl font-black ${ammo === 0 || isReloading ? 'text-red-500' : 'text-white'} leading-none`}>
-                        {isReloading ? 0 : ammo}
-                    </span>
-                    <span className="text-xl text-slate-500 font-bold">/ {maxAmmo}</span>
-                </div>
-                {/* Reload Bar removed from here, visualised on player only */}
-            </div>
-          </div>
-
-          {/* Bottom Right is handled by PlayerHealthBar component, this spacer keeps structure balanced */}
+          <div className="w-[1px]"></div>
           <div className="w-[1px]"></div>
       </div>
     </div>

@@ -24,6 +24,126 @@ export interface UpgradeChain {
 
 export const CHAINS: UpgradeChain[] = [
   {
+    id: 'dash',
+    baseName: 'Dash',
+    tiers: [
+      {
+        suffix: 'Unlock',
+        description: 'Press [SPACE] to Dash. Leaves a damaging trail.',
+        rarity: UpgradeRarity.Rare,
+        apply: (p) => { p.dashUnlocked = true; p.maxDashCharges = 1; p.dashCharges = 1; }
+      },
+      {
+        suffix: 'II',
+        description: '+1 Charge, +Distance, +Trail Duration.',
+        rarity: UpgradeRarity.Epic,
+        apply: (p) => { p.maxDashCharges += 1; p.dashTrailDuration += 0.3; p.dashDuration += 0.05; }
+      },
+      {
+        suffix: 'III',
+        description: '+1 Charge, +Distance, +Trail Damage.',
+        rarity: UpgradeRarity.Epic,
+        apply: (p) => { p.maxDashCharges += 1; p.dashTrailDamage += 10; p.dashDuration += 0.05; }
+      },
+      {
+        suffix: 'Phase Shift',
+        description: 'Dash recharges 2x faster.',
+        rarity: UpgradeRarity.Legendary,
+        apply: (p) => { p.maxDashCooldown *= 0.5; }
+      }
+    ]
+  },
+  {
+    id: 'shield',
+    baseName: 'Shield',
+    tiers: [
+      {
+        suffix: 'Unlock',
+        description: 'Blocks 1 hit per wave. Regenerates on wave start.',
+        rarity: UpgradeRarity.Rare,
+        apply: (p) => { p.maxShields = 1; p.currentShields = 1; }
+      },
+      {
+        suffix: 'II',
+        description: 'Blocks +1 hit per wave.',
+        rarity: UpgradeRarity.Epic,
+        apply: (p) => { p.maxShields += 1; p.currentShields += 1; }
+      },
+      {
+        suffix: 'III',
+        description: 'Blocks +1 hit per wave.',
+        rarity: UpgradeRarity.Epic,
+        apply: (p) => { p.maxShields += 1; p.currentShields += 1; }
+      },
+      {
+        suffix: 'Force Field',
+        description: 'Blocks +2 hits per wave (Total 5).',
+        rarity: UpgradeRarity.Legendary,
+        apply: (p) => { p.maxShields += 2; p.currentShields += 2; }
+      }
+    ]
+  },
+  {
+    id: 'multi_shot',
+    baseName: 'Multi-Shot',
+    tiers: [
+      {
+        suffix: 'I',
+        description: 'Fires +1 projectile (Parallel).',
+        rarity: UpgradeRarity.Rare,
+        apply: (p) => p.projectileCount += 1
+      },
+      {
+        suffix: 'II',
+        description: 'Fires +1 projectile (Total 3).',
+        rarity: UpgradeRarity.Epic,
+        apply: (p) => p.projectileCount += 1
+      },
+      {
+        suffix: 'III',
+        description: 'Fires +1 projectile (Total 4).',
+        rarity: UpgradeRarity.Epic,
+        apply: (p) => p.projectileCount += 1
+      },
+      {
+        suffix: 'Volley',
+        description: 'Fires +1 projectile (Total 5).',
+        rarity: UpgradeRarity.Legendary,
+        apply: (p) => p.projectileCount += 1
+      }
+    ]
+  },
+  {
+    id: 'split_shot',
+    baseName: 'Split Shot',
+    tiers: [
+      {
+        suffix: 'I',
+        description: 'Adds +1 Stream.',
+        rarity: UpgradeRarity.Rare,
+        apply: (p) => { p.projectileStreams += 1; }
+      },
+      {
+        suffix: 'II',
+        description: 'Adds +1 Stream.',
+        rarity: UpgradeRarity.Epic,
+        apply: (p) => { p.projectileStreams += 1; }
+      },
+      {
+        suffix: 'III',
+        description: 'Adds +1 Stream.',
+        rarity: UpgradeRarity.Epic,
+        apply: (p) => { p.projectileStreams += 1; }
+      },
+      {
+        suffix: 'Starfish',
+        description: 'Adds +2 Streams.',
+        rarity: UpgradeRarity.Legendary,
+        apply: (p) => { p.projectileStreams += 2; }
+      }
+    ]
+  },
+  {
     id: 'speed_boost',
     baseName: 'Speed Boost',
     tiers: [
@@ -230,66 +350,6 @@ export const CHAINS: UpgradeChain[] = [
         description: 'Projectiles chain to 4 additional enemies.',
         rarity: UpgradeRarity.Legendary,
         apply: (p) => p.ricochetBounces += 1
-      }
-    ]
-  },
-  {
-    id: 'targeting_scope',
-    baseName: 'Targeting Scope',
-    tiers: [
-      {
-        suffix: 'I',
-        description: 'Increases ricochet targeting range by 30%.',
-        rarity: UpgradeRarity.Common,
-        apply: (p) => p.ricochetSearchRadius *= 1.3
-      },
-      {
-        suffix: 'II',
-        description: 'Increases ricochet targeting range by another 30%.',
-        rarity: UpgradeRarity.Rare,
-        apply: (p) => p.ricochetSearchRadius *= 1.3
-      },
-      {
-        suffix: 'III',
-        description: 'Increases ricochet targeting range by another 40%.',
-        rarity: UpgradeRarity.Epic,
-        apply: (p) => p.ricochetSearchRadius *= 1.4
-      },
-      {
-        suffix: 'Smart Tracking',
-        description: 'Doubles ricochet targeting range.',
-        rarity: UpgradeRarity.Legendary,
-        apply: (p) => p.ricochetSearchRadius *= 2.0
-      }
-    ]
-  },
-  {
-    id: 'multi_shot',
-    baseName: 'Multi-Shot',
-    tiers: [
-      {
-        suffix: 'I',
-        description: 'Fires +1 projectile (Total 2).',
-        rarity: UpgradeRarity.Common,
-        apply: (p) => p.projectileCount += 1
-      },
-      {
-        suffix: 'II',
-        description: 'Fires +2 projectiles (Total 3).',
-        rarity: UpgradeRarity.Rare,
-        apply: (p) => p.projectileCount += 1
-      },
-      {
-        suffix: 'III',
-        description: 'Fires +3 projectiles (Total 4).',
-        rarity: UpgradeRarity.Epic,
-        apply: (p) => p.projectileCount += 1
-      },
-      {
-        suffix: 'Barrage',
-        description: 'Fires +4 projectiles (Total 5).',
-        rarity: UpgradeRarity.Legendary,
-        apply: (p) => p.projectileCount += 1
       }
     ]
   },

@@ -27,6 +27,18 @@ export class GameRenderer {
    * Main render method called by the React animation frame loop.
    */
   render(state: GameState) {
+    // F. UI BACKGROUND ISOLATION Check
+    // If in non-gameplay modes (Menu, Shop, GameOver, WaveIntro), render abstract background only
+    if (state.status === GameStatus.Menu || 
+        state.status === GameStatus.Shop || 
+        state.status === GameStatus.GameOver || 
+        state.status === GameStatus.WaveIntro) {
+        
+        this.drawAbstractBackground();
+        return;
+    }
+
+    // GAMEPLAY RENDER (Playing, Paused, DevConsole)
     this.clear();
     
     // Safety check if resizing state hasn't propagated
@@ -55,10 +67,7 @@ export class GameRenderer {
 
     // 3. Top Layer: Main Entities
     for (const entity of entities) {
-      // Don't draw player during Wave Intro (hidden until start)
-      if (state.status === GameStatus.WaveIntro && entity.type === EntityType.Player) {
-          continue;
-      }
+      // Don't draw player during Wave Intro (handled by exclusion check above anyway)
       
       // Skip already drawn types
       if (entity.type === EntityType.Particle || entity.type === EntityType.Hazard) continue;
@@ -67,7 +76,7 @@ export class GameRenderer {
     }
     
     // Render Player Ability UI (Overlay on top of player)
-    if (state.player && state.player.active && state.status === GameStatus.Playing) {
+    if (state.player && state.player.active) {
         this.drawPlayerAbilityUI(state.player);
     }
 
@@ -83,6 +92,36 @@ export class GameRenderer {
     }
   }
 
+  private drawAbstractBackground() {
+      // Mode 2: Stylized Static Backdrop
+      const grad = this.ctx.createRadialGradient(
+          this.width / 2, this.height / 2, 0, 
+          this.width / 2, this.height / 2, Math.max(this.width, this.height)
+      );
+      grad.addColorStop(0, '#1e1b4b'); // Deep Indigo
+      grad.addColorStop(1, '#020617'); // Slate 950
+      
+      this.ctx.fillStyle = grad;
+      this.ctx.fillRect(0, 0, this.width, this.height);
+      
+      // Optional: Add subtle noise or grid? 
+      // Keeping it clean as requested "simple is fine"
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+      this.ctx.lineWidth = 1;
+      const gridSize = 40;
+      
+      this.ctx.beginPath();
+      for(let x=0; x<this.width; x+=gridSize) {
+          this.ctx.moveTo(x, 0);
+          this.ctx.lineTo(x, this.height);
+      }
+      for(let y=0; y<this.height; y+=gridSize) {
+          this.ctx.moveTo(0, y);
+          this.ctx.lineTo(this.width, y);
+      }
+      this.ctx.stroke();
+  }
+
   private clear() {
     this.ctx.fillStyle = Colors.Background;
     this.ctx.fillRect(0, 0, this.width, this.height);
@@ -90,29 +129,59 @@ export class GameRenderer {
   
   private drawHazard(hazard: HazardEntity) {
       this.ctx.save();
-      this.ctx.translate(hazard.position.x, hazard.position.y);
       
-      const pulse = Math.sin(Date.now() / 200) * 0.1 + 0.9;
-      
-      // Outer glow
-      this.ctx.fillStyle = 'rgba(16, 185, 129, 0.2)'; // Emerald
-      this.ctx.beginPath();
-      this.ctx.arc(0, 0, hazard.radius * pulse, 0, Math.PI * 2);
-      this.ctx.fill();
+      // DASH TRAIL STYLE (Continuous Line)
+      if (hazard.isPlayerOwned && hazard.style === 'line' && hazard.from && hazard.to) {
+          const alpha = Math.max(0, hazard.lifetime / hazard.maxLifetime);
+          
+          this.ctx.beginPath();
+          this.ctx.moveTo(hazard.from.x, hazard.from.y);
+          this.ctx.lineTo(hazard.to.x, hazard.to.y);
+          
+          // Core line
+          this.ctx.strokeStyle = `rgba(99, 102, 241, ${alpha * 0.8})`; // Indigo
+          this.ctx.lineWidth = hazard.radius * 2;
+          this.ctx.lineCap = 'round';
+          this.ctx.stroke();
+          
+          // Outer glow
+          this.ctx.strokeStyle = `rgba(165, 180, 252, ${alpha * 0.4})`;
+          this.ctx.lineWidth = hazard.radius * 2 + 4;
+          this.ctx.stroke();
 
-      // Inner core
-      this.ctx.fillStyle = 'rgba(16, 185, 129, 0.4)';
-      this.ctx.beginPath();
-      this.ctx.arc(0, 0, hazard.radius * 0.7 * pulse, 0, Math.PI * 2);
-      this.ctx.fill();
-      
-      // Warning Border
-      this.ctx.strokeStyle = 'rgba(16, 185, 129, 0.8)';
-      this.ctx.lineWidth = 2;
-      this.ctx.setLineDash([5, 5]);
-      this.ctx.beginPath();
-      this.ctx.arc(0, 0, hazard.radius, 0, Math.PI * 2);
-      this.ctx.stroke();
+      } else if (hazard.isPlayerOwned) {
+           // Fallback for old circle trails
+          this.ctx.translate(hazard.position.x, hazard.position.y);
+          const alpha = Math.max(0, hazard.lifetime / hazard.maxLifetime);
+          this.ctx.fillStyle = `rgba(99, 102, 241, ${alpha * 0.5})`;
+          this.ctx.beginPath();
+          this.ctx.arc(0, 0, hazard.radius, 0, Math.PI * 2);
+          this.ctx.fill();
+      } else {
+          // ENEMY TOXIC ZONE STYLE
+          this.ctx.translate(hazard.position.x, hazard.position.y);
+          const pulse = Math.sin(Date.now() / 200) * 0.1 + 0.9;
+          
+          // Outer glow
+          this.ctx.fillStyle = 'rgba(16, 185, 129, 0.2)'; // Emerald
+          this.ctx.beginPath();
+          this.ctx.arc(0, 0, hazard.radius * pulse, 0, Math.PI * 2);
+          this.ctx.fill();
+    
+          // Inner core
+          this.ctx.fillStyle = 'rgba(16, 185, 129, 0.4)';
+          this.ctx.beginPath();
+          this.ctx.arc(0, 0, hazard.radius * 0.7 * pulse, 0, Math.PI * 2);
+          this.ctx.fill();
+          
+          // Warning Border
+          this.ctx.strokeStyle = 'rgba(16, 185, 129, 0.8)';
+          this.ctx.lineWidth = 2;
+          this.ctx.setLineDash([5, 5]);
+          this.ctx.beginPath();
+          this.ctx.arc(0, 0, hazard.radius, 0, Math.PI * 2);
+          this.ctx.stroke();
+      }
 
       this.ctx.restore();
   }
@@ -128,7 +197,6 @@ export class GameRenderer {
           this.ctx.lineCap = 'round';
           this.ctx.lineWidth = particle.width;
           
-          // Use Amber for the trail (Matches Projectile Color)
           this.ctx.strokeStyle = `rgba(251, 191, 36, ${alpha})`;
           this.ctx.stroke();
       }
@@ -151,7 +219,6 @@ export class GameRenderer {
     if (entity.type === EntityType.Enemy) {
         this.drawEnemyShape(entity as EnemyEntity);
         
-        // Draw direction indicator/Telegraphs for Enemy
         if (entity.variant !== EnemyVariant.Boss) {
             this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
             this.ctx.lineWidth = 2;
@@ -161,34 +228,117 @@ export class GameRenderer {
             this.ctx.stroke();
         }
 
-    } else if (entity.type === EntityType.Projectile && entity.isEnemyProjectile) {
-        // Enemy Projectile (Diamond/Star shape)
-        this.ctx.beginPath();
-        const r = entity.radius;
-        this.ctx.moveTo(r, 0);
-        this.ctx.lineTo(0, r);
-        this.ctx.lineTo(-r, 0);
-        this.ctx.lineTo(0, -r);
-        this.ctx.closePath();
-        this.ctx.fill();
+    } else if (entity.type === EntityType.Projectile) {
+        if (entity.isEnemyProjectile) {
+            this.ctx.beginPath();
+            const r = entity.radius;
+            this.ctx.moveTo(r, 0);
+            this.ctx.lineTo(0, r);
+            this.ctx.lineTo(-r, 0);
+            this.ctx.lineTo(0, -r);
+            this.ctx.closePath();
+            
+            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            this.ctx.lineWidth = 1.5;
+            this.ctx.stroke();
+            this.ctx.fill();
 
-        // Glow
-        this.ctx.shadowBlur = 5;
-        this.ctx.shadowColor = entity.color;
-
+            this.ctx.shadowBlur = 5;
+            this.ctx.shadowColor = entity.color;
+        } else {
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, entity.radius, 0, Math.PI * 2);
+            this.ctx.fillStyle = Colors.Projectile; 
+            this.ctx.fill();
+            
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, entity.radius * 0.5, 0, Math.PI * 2);
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fill();
+            
+            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, 0);
+            this.ctx.lineTo(entity.radius, 0);
+            this.ctx.stroke();
+        }
     } else {
-        // Default Circle (Player, Player Projectile, Basic Enemy fallback)
+        // Player
         this.ctx.beginPath();
         this.ctx.arc(0, 0, entity.radius, 0, Math.PI * 2);
         this.ctx.fill();
         
-        // Draw direction indicator for Player/Projectiles
+        // Draw direction indicator for Player
         this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
         this.ctx.moveTo(0, 0);
         this.ctx.lineTo(entity.radius, 0);
         this.ctx.stroke();
+        
+        // A. SHIELD VISUALS (Updated to Final Spec)
+        const player = entity as PlayerEntity;
+        
+        // Conditions: 
+        // 1. Has shields > 0
+        // 2. Just broke (shieldHitAnimTimer > 0)
+        
+        if (player.currentShields > 0 || (player.shieldHitAnimTimer && player.shieldHitAnimTimer > 0)) {
+            // Un-rotate for stable shield ring? 
+            // PROMPT D.1: "Shield ring... must rotate with player aim"
+            // So we KEEP the rotation context.
+            
+            const shieldRadius = player.radius + 24; // Outer shell
+            
+            // Determine opacity based on charges
+            let opacity = 0;
+            if (player.currentShields > 0) {
+                 // Scale 0.2 to 0.6
+                 opacity = 0.2 + (player.currentShields / player.maxShields) * 0.4;
+            } else if (player.shieldHitAnimTimer > 0) {
+                 // Popping
+                 opacity = (player.shieldHitAnimTimer / 0.2) * 1.0; 
+            }
+            opacity = Math.max(0, Math.min(1, opacity));
+            
+            if (opacity > 0) {
+                // POP Effect Color Override
+                const isPopping = player.currentShields === 0 && player.shieldHitAnimTimer > 0;
+                const shieldColor = isPopping ? 'rgba(200, 230, 255,' : 'rgba(14, 165, 233,';
+
+                // 1. Spherical Energy Field
+                const grad = this.ctx.createRadialGradient(0, 0, shieldRadius * 0.7, 0, 0, shieldRadius);
+                grad.addColorStop(0, `${shieldColor} 0.0)`);
+                grad.addColorStop(0.8, `${shieldColor} ${opacity * 0.3})`);
+                grad.addColorStop(1, `${shieldColor} ${opacity * 0.6})`);
+                
+                this.ctx.fillStyle = grad;
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // 2. Animated Band Effect (Rotating stripe)
+                // We want the stripe to move relative to the shield surface
+                // If the shield rotates with aim, the stripe rotates with it.
+                // To animate it "spinning" independently or pulsing, we can modify arc or alpha.
+                
+                // Let's do a pulsing band
+                const pulse = Math.sin(Date.now() / 200) * 0.1 + 0.9;
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, shieldRadius * 0.85 * pulse, 0, Math.PI * 2);
+                this.ctx.strokeStyle = `${shieldColor} ${opacity * 0.4})`;
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
+
+                // 3. Rim Highlight
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+                this.ctx.strokeStyle = `${shieldColor} ${opacity * 0.9})`;
+                this.ctx.lineWidth = isPopping ? 4 : 2;
+                this.ctx.stroke();
+            }
+        }
     }
 
     this.ctx.restore();
@@ -196,31 +346,151 @@ export class GameRenderer {
 
   private drawPlayerAbilityUI(player: PlayerEntity) {
       const { x, y } = player.position;
-      const radius = player.radius + 12; // Draw outside player body
-
-      // 1. Reload Bar (Displayed underneath player when reloading)
+      const rotation = player.rotation;
+      
+      // We need to render rings aligned with aim. 
+      // Current context is absolute world coordinates (unrotated).
+      // We will perform draws using arcs offset by `rotation`.
+      
+      // E. RELOAD UI (Final Form)
+      const ringRadius = player.radius + 12;
+      
       if (player.isReloading) {
-        const barWidth = 40;
-        const barHeight = 4;
-        const yOffset = 30; // Distance below player center
+        // Reloading: Smooth Fill Arc
+        const reloadPct = 1 - (player.reloadTimer / player.maxReloadTime);
+        const isAlmostDone = player.reloadTimer < 0.15;
         
-        this.ctx.save();
-        this.ctx.translate(x, y + yOffset);
+        // Background track
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
+        this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.lineWidth = 4;
+        this.ctx.stroke();
         
-        // Background
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        this.ctx.fillRect(-barWidth/2, 0, barWidth, barHeight);
+        // Progress Arc (Starts at rotation - PI/2 ?? No, "start point aligns with aim")
+        // Aim is `rotation`. So start at `rotation`.
+        // Let's draw it as a symmetric arc growing? Or a circle filling?
+        // "Ring fills smoothly as a solid arc". Typically clockwise from top or aim.
+        // Let's go clockwise from aim.
         
-        // Progress
-        // Fills from 0 (empty) to full (loaded)
-        const pct = 1 - (player.reloadTimer / player.maxReloadTime);
-        this.ctx.fillStyle = '#fbbf24'; // Amber
-        this.ctx.fillRect(-barWidth/2, 0, barWidth * pct, barHeight);
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, ringRadius, rotation, rotation + (Math.PI * 2 * reloadPct));
+        this.ctx.strokeStyle = isAlmostDone ? '#ffffff' : '#fbbf24'; // Amber
+        this.ctx.lineWidth = 4;
+        this.ctx.lineCap = 'round';
+        this.ctx.stroke();
         
-        this.ctx.restore();
+        if (isAlmostDone) {
+             this.ctx.shadowBlur = 10;
+             this.ctx.shadowColor = '#ffffff';
+             this.ctx.stroke(); // Draw again for glow
+             this.ctx.shadowBlur = 0;
+        }
+      } else {
+        // Normal State: Segmented Bullets
+        // "Yellow segmented ring... start point aligns with player's aim direction"
+        
+        // We centre the arc segments around the aim direction? Or start from it?
+        // Typically UI looks best if centered or symmetric.
+        // But prompt says "start point aligns". 
+        // Let's distribute them symmetrically AROUND the aim direction for best "HUD" feel.
+        // i.e. Aim is center.
+        
+        const totalArc = Math.PI * 1.5; // Don't close the full circle, clearer directionality
+        const startAngle = rotation - (totalArc / 2);
+        
+        // Wait, standard ammo rings usually go full circle.
+        // Let's stick to full circle but start at aim.
+        const fullCircle = Math.PI * 2;
+        const gap = 0.15; // Radians gap
+        
+        // Calculate arc per bullet
+        const segmentArc = (fullCircle - (gap * player.maxAmmo)) / player.maxAmmo;
+        
+        if (player.maxAmmo > 40) {
+             // Solid bar for high ammo
+             const pct = player.currentAmmo / player.maxAmmo;
+             this.ctx.beginPath();
+             this.ctx.arc(x, y, ringRadius, rotation, rotation + (fullCircle * pct));
+             this.ctx.strokeStyle = '#fbbf24';
+             this.ctx.lineWidth = 3;
+             this.ctx.stroke();
+        } else {
+             this.ctx.lineWidth = 3;
+             // Draw Segments
+             for (let i = 0; i < player.currentAmmo; i++) {
+                const angle = rotation + (i * (segmentArc + gap));
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, ringRadius, angle, angle + segmentArc);
+                this.ctx.strokeStyle = '#fbbf24';
+                this.ctx.stroke();
+            }
+            // Draw empty slots (faint)
+            for (let i = player.currentAmmo; i < player.maxAmmo; i++) {
+                const angle = rotation + (i * (segmentArc + gap));
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, ringRadius, angle, angle + segmentArc);
+                this.ctx.strokeStyle = 'rgba(251, 191, 36, 0.2)';
+                this.ctx.stroke();
+            }
+        }
       }
 
-      // 2. Draw Visual Pulse Effect if active
+      // 2. PULSE/DASH COOLDOWN RINGS
+      // We can layer them or put them further out.
+      // Pulse Cooldown
+      const pulseRadius = player.radius + 18;
+      
+      // Dash Cooldown / Fatigue Visualization
+      // "Visual cue shows dash recharge state"
+      // Let's use a small arc under the player or an outer ring
+      if (player.dashUnlocked) {
+          const dashRadius = player.radius + 22;
+          // Render charges as dots/arcs centered on aim direction
+          const chargeArc = 0.4;
+          const chargeGap = 0.1;
+          const totalDashArc = (player.maxDashCharges * chargeArc) + ((player.maxDashCharges - 1) * chargeGap);
+          const startDash = rotation - (totalDashArc / 2) + Math.PI; // Opposite to aim (Rear)
+          
+          for (let i = 0; i < player.maxDashCharges; i++) {
+              const angle = startDash + (i * (chargeArc + chargeGap));
+              
+              this.ctx.beginPath();
+              this.ctx.arc(x, y, dashRadius, angle, angle + chargeArc);
+              this.ctx.lineWidth = 4;
+              
+              if (i < player.dashCharges) {
+                  this.ctx.strokeStyle = '#6366f1'; // Ready Indigo
+              } else if (i === player.dashCharges) {
+                  // Recharging
+                  const pct = 1 - (player.dashCooldown / player.maxDashCooldown);
+                  this.ctx.strokeStyle = 'rgba(99, 102, 241, 0.3)';
+                  this.ctx.stroke();
+                  
+                  this.ctx.beginPath();
+                  this.ctx.arc(x, y, dashRadius, angle, angle + (chargeArc * pct));
+                  this.ctx.strokeStyle = '#818cf8';
+              } else {
+                  this.ctx.strokeStyle = 'rgba(99, 102, 241, 0.1)';
+              }
+              this.ctx.stroke();
+          }
+      }
+      
+      // Pulse (Ability) Ring
+      if (player.maxRepulseCooldown > 0) {
+        if (player.repulseCooldown > 0) {
+            // Cooldown indicator
+            const pct = 1 - (player.repulseCooldown / player.maxRepulseCooldown);
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, pulseRadius, rotation, rotation + (Math.PI * 2 * pct));
+            this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.3)'; // Cyan faint
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+        }
+      }
+
+      // 3. VISUAL PULSE EFFECT (The expanding wave when used)
       if (player.repulseVisualTimer > 0) {
           const t = 1 - (player.repulseVisualTimer / 0.3); // 0 to 1 over 0.3s
           const maxPulseRadius = 180;
@@ -236,38 +506,6 @@ export class GameRenderer {
           this.ctx.stroke();
           this.ctx.restore();
       }
-
-      // 3. Draw Cooldown Ring
-      // If cooldown > 0, draw partial ring. If 0, draw full faint ring.
-      this.ctx.save();
-      this.ctx.translate(x, y);
-      
-      this.ctx.lineWidth = 3;
-      
-      if (player.repulseCooldown <= 0) {
-          // Ready: Faint full ring
-          this.ctx.strokeStyle = 'rgba(100, 200, 255, 0.4)';
-          this.ctx.beginPath();
-          this.ctx.arc(0, 0, radius, 0, Math.PI * 2);
-          this.ctx.stroke();
-      } else {
-          // Cooling down: Arc
-          const pct = 1 - (player.repulseCooldown / player.maxRepulseCooldown);
-          // Background track
-          this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-          this.ctx.beginPath();
-          this.ctx.arc(0, 0, radius, 0, Math.PI * 2);
-          this.ctx.stroke();
-          
-          // Progress
-          this.ctx.strokeStyle = 'rgba(100, 200, 255, 0.8)';
-          this.ctx.beginPath();
-          // Start from top (-PI/2)
-          this.ctx.arc(0, 0, radius, -Math.PI/2, -Math.PI/2 + (Math.PI * 2 * pct));
-          this.ctx.stroke();
-      }
-      
-      this.ctx.restore();
   }
 
   private drawEnemyShape(enemy: EnemyEntity) {
@@ -314,15 +552,12 @@ export class GameRenderer {
              }
              
              if (enemy.aiState === 'telegraph_charge') {
-                 // STATIC ARROW RENDERING
-                 // We use the locked chargeVector if available, otherwise fallback to current rotation
                  const rot = enemy.chargeVector 
                      ? Math.atan2(enemy.chargeVector.y, enemy.chargeVector.x)
                      : enemy.rotation;
 
                  this.ctx.save();
-                 // Rotate context to align with charge direction
-                 this.ctx.rotate(rot - enemy.rotation); // Relative to current entity rotation (which is 0 in drawEntity context usually)
+                 this.ctx.rotate(rot - enemy.rotation); 
                  
                  this.ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)';
                  this.ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';

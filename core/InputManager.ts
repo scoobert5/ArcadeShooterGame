@@ -4,7 +4,8 @@ export interface InputState {
   left: boolean;
   right: boolean;
   fire: boolean;
-  ability: boolean; // New input for Repulse Pulse
+  ability: boolean; // Pulse (Right Click / Shift)
+  dash: boolean;    // Dash (Space)
   reload: boolean; // Manual Reload intent
   escape: boolean; // Pause intent
   pointer: { x: number; y: number };
@@ -18,6 +19,7 @@ export class InputManager {
     right: false,
     fire: false,
     ability: false,
+    dash: false,
     reload: false,
     escape: false,
     pointer: { x: 0, y: 0 },
@@ -60,6 +62,7 @@ export class InputManager {
     this.state.right = false;
     this.state.fire = false;
     this.state.ability = false;
+    this.state.dash = false;
     this.state.reload = false;
     this.state.escape = false;
   }
@@ -74,9 +77,13 @@ export class InputManager {
       case 'KeyS': case 'ArrowDown': this.state.down = true; break;
       case 'KeyA': case 'ArrowLeft': this.state.left = true; break;
       case 'KeyD': case 'ArrowRight': this.state.right = true; break;
-      // Space is now Ability
-      case 'Space': this.state.ability = true; break;
+      
+      // Dash
+      case 'Space': this.state.dash = true; break;
+      
+      // Pulse (Ability) Alternate
       case 'ShiftLeft': case 'ShiftRight': this.state.ability = true; break;
+      
       case 'KeyR': this.state.reload = true; break;
       case 'Escape': this.state.escape = true; break;
     }
@@ -88,8 +95,11 @@ export class InputManager {
       case 'KeyS': case 'ArrowDown': this.state.down = false; break;
       case 'KeyA': case 'ArrowLeft': this.state.left = false; break;
       case 'KeyD': case 'ArrowRight': this.state.right = false; break;
-      case 'Space': this.state.ability = false; break;
+      
+      case 'Space': this.state.dash = false; break;
+      
       case 'ShiftLeft': case 'ShiftRight': this.state.ability = false; break;
+      
       case 'KeyR': this.state.reload = false; break;
       case 'Escape': this.state.escape = false; break;
     }
@@ -108,7 +118,7 @@ export class InputManager {
         // Left Click -> Fire
         this.state.fire = true;
     } else if (e.button === 2) {
-        // Right Click -> Ability
+        // Right Click -> Pulse (Ability)
         this.state.ability = true;
     }
   };

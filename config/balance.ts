@@ -25,12 +25,12 @@ export const BALANCE = {
   
   // Shop Logic
   SHOP: {
-    // Steeper scaling since all upgrades are available from start
-    // Tier 1: 650 (Was 500)
-    // Tier 2: 2500 (Was 2000)
-    // Tier 3: 6500 (Was 5000)
-    // Tier 4: 15000 (Was 12000)
-    COSTS: [650, 2500, 6500, 15000] as const, 
+    // Steeper scaling: +50% from previous
+    // Tier 1: 975 (Was 650)
+    // Tier 2: 3750 (Was 2500)
+    // Tier 3: 9750 (Was 6500)
+    // Tier 4: 22500 (Was 15000)
+    COSTS: [975, 3750, 9750, 22500] as const, 
   },
 
   // Default Player Stats (Initialization)
@@ -44,6 +44,11 @@ export const BALANCE = {
       BASE_SPEED: PLAYER_SPEED,
       BASE_FIRE_RATE: PLAYER_FIRE_RATE,
       BASE_RICOCHET_RADIUS: 220, // Pixel radius for finding next target
+      
+      // New Ability Defaults
+      DASH_COOLDOWN: 2.5, // Time to regenerate one charge
+      DASH_DURATION: 0.15,
+      DASH_TRAIL_DAMAGE: 10,
   }
 };
 

@@ -96,13 +96,14 @@ export class EnemySystem implements System {
 
       // Shooter Firing Logic
       if (enemy.variant === EnemyVariant.Shooter && player) {
-          if (enemy.shootTimer === undefined) enemy.shootTimer = 2.0; // Init if undefined
+          if (enemy.shootTimer === undefined) enemy.shootTimer = 1.0; 
 
           // Only fire if inside arena and relatively close
           const distToPlayer = Vec2.dist(enemy.position, player.position);
           if (enemy.hasEnteredArena && distToPlayer < 500 && enemy.shootTimer <= 0) {
               this.fireAtPlayer(state, enemy, player);
-              enemy.shootTimer = 2.5 + Math.random(); // Random reload
+              // Increased Cadence (+50% faster): Range 0.8s - 1.8s (Avg ~1.3s)
+              enemy.shootTimer = 0.8 + Math.random(); 
           }
       }
       
@@ -498,14 +499,15 @@ export class EnemySystem implements System {
       const projectileCount = 12;
       const speed = 200;
       const step = (Math.PI * 2) / projectileCount;
-      const offset = 0; // Rotate over time? Keeping it static for readability
+      const offset = 0; 
 
       for (let i = 0; i < projectileCount; i++) {
           const angle = (step * i) + offset;
           const vx = Math.cos(angle) * speed;
           const vy = Math.sin(angle) * speed;
           
-          this.spawnEnemyProjectile(state, boss.position, { x: vx, y: vy }, boss.id);
+          // Use Boss Projectile visuals
+          this.spawnEnemyProjectile(state, boss.position, { x: vx, y: vy }, boss.id, true);
       }
   }
 
@@ -520,20 +522,20 @@ export class EnemySystem implements System {
       const vx = (dx / dist) * speed;
       const vy = (dy / dist) * speed;
 
-      this.spawnEnemyProjectile(state, enemy.position, { x: vx, y: vy }, enemy.id);
+      this.spawnEnemyProjectile(state, enemy.position, { x: vx, y: vy }, enemy.id, false);
   }
 
-  private spawnEnemyProjectile(state: GameState, position: Vector2, velocity: Vector2, ownerId: string) {
+  private spawnEnemyProjectile(state: GameState, position: Vector2, velocity: Vector2, ownerId: string, isBoss: boolean) {
       const projectile: ProjectileEntity = {
           id: `eproj_${Date.now()}_${Math.random()}`,
           type: EntityType.Projectile,
           position: { ...position },
           velocity: { ...velocity },
-          radius: 5, // Slightly larger than player projectiles
+          radius: isBoss ? 7 : 5, // Larger for Boss
           rotation: Math.atan2(velocity.y, velocity.x),
-          color: Colors.EnemyProjectile,
+          color: isBoss ? Colors.BossProjectile : Colors.EnemyProjectile, // Different Colors
           active: true,
-          damage: 10, // Standard enemy projectile damage
+          damage: 10, 
           lifetime: 5.0,
           ownerId: ownerId,
           isEnemyProjectile: true,

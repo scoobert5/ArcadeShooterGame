@@ -16,15 +16,20 @@ export class WaveSystem implements System {
         // Signal that wave is cleared (GameEngine will handle Upgrade or Next Wave)
         state.waveCleared = true;
 
-        // --- Wave End Healing (Percent of Missing Health) ---
-        // "Catch-up" mechanic: Heals more when you are low.
         if (state.player && state.player.active) {
+            // --- Wave End Healing (Percent of Missing Health) ---
             const missingHealth = state.player.maxHealth - state.player.health;
             if (missingHealth > 0) {
                 const healRatio = state.player.waveHealRatio || BALANCE.WAVE.HEAL_RATIO;
                 const healAmount = missingHealth * healRatio;
                 
                 state.player.health = Math.min(state.player.maxHealth, state.player.health + healAmount);
+            }
+            
+            // --- Shield Regeneration ---
+            // Shields only refill at start of wave
+            if (state.player.maxShields > 0) {
+                state.player.currentShields = state.player.maxShields;
             }
         }
       }

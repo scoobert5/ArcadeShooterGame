@@ -30,19 +30,22 @@ export const Colors = {
   Enemy: '#ef4444',  // Red 500
   Projectile: '#fbbf24', // Amber 400
   EnemyProjectile: '#e879f9', // Fuchsia 400 (Distinct from Amber)
+  BossProjectile: '#c084fc', // Purple 400 (Brighter/Distinct)
   Background: '#0f172a', // Slate 900
   Boss: '#7e22ce',   // Purple 700 (Boss Color)
+  Shield: '#0ea5e9', // Sky 500
+  DashTrail: '#6366f1', // Indigo 500
 };
 
 // Enemy Variant Configuration
-// TUNING: Reduced values to slow down economy
+// TUNING: Reduced values to slow down economy (-25%)
 export const ENEMY_VARIANTS = {
   [EnemyVariant.Basic]: {
     speed: 100,
     radius: 14,
     health: 20, // 2 hits
     damage: 10,
-    value: 80, // Was 150
+    value: 60, // Was 80
     color: '#ef4444' // Red 500
   },
   [EnemyVariant.Fast]: {
@@ -50,7 +53,7 @@ export const ENEMY_VARIANTS = {
     radius: 10,
     health: 10, // 1 hit
     damage: 5,
-    value: 120, // Was 250
+    value: 90, // Was 120
     color: '#f97316' // Orange 500
   },
   [EnemyVariant.Tank]: {
@@ -58,7 +61,7 @@ export const ENEMY_VARIANTS = {
     radius: 20,
     health: 30, // 3 hits (Base)
     damage: 20,
-    value: 300, // Was 600
+    value: 225, // Was 300
     color: '#991b1b' // Red 800
   },
   [EnemyVariant.Shooter]: {
@@ -66,7 +69,7 @@ export const ENEMY_VARIANTS = {
     radius: 14,
     health: 15,   // Fragile
     damage: 10,   // Projectile damage
-    value: 150,   
+    value: 110,   // Was 150
     color: '#d946ef' // Fuchsia 500
   },
   [EnemyVariant.Boss]: {

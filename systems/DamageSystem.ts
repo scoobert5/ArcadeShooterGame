@@ -9,6 +9,7 @@ export class DamageSystem implements System {
     // 0. Update Hazards (Damage & Lifetime)
     const hazards = state.entityManager.getByType(EntityType.Hazard) as HazardEntity[];
     const player = state.player;
+    const enemies = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
 
     for (const hazard of hazards) {
         hazard.lifetime -= dt;
@@ -17,27 +18,72 @@ export class DamageSystem implements System {
             continue;
         }
 
-        // Damage Tick on Player
-        if (player && player.active) {
-            const dist = Vec2.dist(hazard.position, player.position);
-            // Check radius overlap
-            if (dist < hazard.radius + player.radius) {
-                // Tick Timer Logic
-                if (hazard.tickTimer > 0) {
-                    hazard.tickTimer -= dt;
+        if (hazard.tickTimer > 0) {
+            hazard.tickTimer -= dt;
+        }
+
+        // Logic split based on ownership
+        if (hazard.isPlayerOwned) {
+            // Player Hazard (Dash Trail) -> Hurts Enemies
+            if (hazard.tickTimer <= 0) {
+                for (const enemy of enemies) {
+                    if (!enemy.active) continue;
+                    
+                    let dist = 0;
+                    if (hazard.style === 'line' && hazard.from && hazard.to) {
+                        dist = Vec2.distToSegment(enemy.position, hazard.from, hazard.to);
+                    } else {
+                        dist = Vec2.dist(hazard.position, enemy.position);
+                    }
+
+                    if (dist < hazard.radius + enemy.radius) {
+                        enemy.health -= hazard.damage;
+                        enemy.hitFlashTimer = 0.1;
+                        if (enemy.health <= 0) {
+                            enemy.active = false;
+                            state.score += enemy.value;
+                        }
+                    }
                 }
-                
-                if (hazard.tickTimer <= 0) {
-                    // Deal Damage
-                    if (player.invulnerabilityTimer <= 0) {
-                         const damage = hazard.damage;
-                         const mitigation = player.damageReduction || 0;
-                         const actualDamage = Math.max(1, damage * (1 - mitigation));
-                         
-                         player.health -= actualDamage;
-                         // No Invulnerability timer for hazards, just tick rate
-                         hazard.tickTimer = 0.5; // Tick every 0.5s
-                         player.hitFlashTimer = 0.1;
+                hazard.tickTimer = 0.1; // Reset tick
+            }
+        } else {
+             // Enemy Hazard -> Hurts Player
+             if (player && player.active) {
+                let dist = 0;
+                if (hazard.style === 'line' && hazard.from && hazard.to) {
+                    dist = Vec2.distToSegment(player.position, hazard.from, hazard.to);
+                } else {
+                    dist = Vec2.dist(hazard.position, player.position);
+                }
+
+                // Check radius overlap
+                if (dist < hazard.radius + player.radius) {
+                    
+                    if (hazard.tickTimer <= 0) {
+                        // Deal Damage
+                        if (player.invulnerabilityTimer <= 0) {
+                             // Shield check for hazard? Usually hazards bypass shield collision boundary because they are ground effects,
+                             // but for fairness, if shield is "Energy Field", it might block toxics?
+                             // Prompt A.1 says "Enemy contact checks against shield radius". Doesn't specify ground hazards.
+                             // Assuming ground hazards ignore shield or damage shield.
+                             // Let's have hazards damage player/shield normally.
+                             
+                             if (player.currentShields > 0) {
+                                 player.currentShields--;
+                                 player.invulnerabilityTimer = 0.5;
+                                 player.shieldHitAnimTimer = 0.2;
+                             } else {
+                                 const damage = hazard.damage;
+                                 const mitigation = player.damageReduction || 0;
+                                 const actualDamage = Math.max(1, damage * (1 - mitigation));
+                                 
+                                 player.health -= actualDamage;
+                                 player.hitFlashTimer = 0.1;
+                             }
+                             // No Invulnerability timer for hazards, just tick rate
+                             hazard.tickTimer = 0.5; // Tick every 0.5s
+                        }
                     }
                 }
             }
@@ -79,7 +125,17 @@ export class DamageSystem implements System {
       }
     }
 
-    // 2. Process Enemy Hits on Player (Body Collision)
+    // 2. Process Enemy Hits on Player (Collision)
+    // IMPORTANT: CollisionSystem creates these events based on body collision.
+    // However, we now have shield logic that intercepts enemies further out.
+    // The CollisionSystem should effectively prevent body overlap if shield is up.
+    // But if they DO overlap (e.g. frame skip), this handles damage.
+    
+    // We also need to check "Shield Radius" collisions which might NOT be in playerHitEvents
+    // if CollisionSystem uses body radius.
+    // **Actually, CollisionSystem handles physics. We need logic there too.**
+    // But for DAMAGE logic:
+    
     for (const hit of state.playerHitEvents) {
       const { player, enemy } = hit;
 
@@ -87,6 +143,25 @@ export class DamageSystem implements System {
 
       // Only take damage if invulnerability timer is 0
       if (player.invulnerabilityTimer <= 0) {
+        
+        // --- SHIELD CHECK ---
+        if (player.currentShields > 0) {
+            player.currentShields--;
+            player.invulnerabilityTimer = 0.5; // Longer invuln on shield break
+            player.shieldHitAnimTimer = 0.2; // Visual pop
+            
+            // Major Knockback to Enemy on Block
+            const dx = enemy.position.x - player.position.x;
+            const dy = enemy.position.y - player.position.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist > 0) {
+                const dir = { x: dx/dist, y: dy/dist };
+                enemy.knockback.x += dir.x * 800;
+                enemy.knockback.y += dir.y * 800;
+            }
+            continue; 
+        }
+
         // Calculate Actual Damage (Raw Damage * (1 - Reduction))
         const rawDamage = enemy.damage;
         const mitigation = player.damageReduction || 0;
@@ -94,23 +169,19 @@ export class DamageSystem implements System {
 
         player.health -= actualDamage;
         
-        // Grant temporary invulnerability (adjusted to 0.35s for fairness)
+        // Grant temporary invulnerability
         player.invulnerabilityTimer = 0.35;
-        
-        // Trigger visual flash/screen shake effect
         player.hitFlashTimer = 0.2;
 
         // --- Bouncy Knockback Impulse ---
-        // Apply a strong velocity impulse to the enemy's knockback vector
         const dx = enemy.position.x - player.position.x;
         const dy = enemy.position.y - player.position.y;
         const dist = Math.sqrt(dx*dx + dy*dy);
         
         if (dist > 0) {
             const dir = { x: dx/dist, y: dy/dist };
-            const impulseStrength = 500; // Strong instantaneous push
+            const impulseStrength = 500;
             
-            // Add to existing knockback to handle multiple hits gracefully
             enemy.knockback.x += dir.x * impulseStrength;
             enemy.knockback.y += dir.y * impulseStrength;
         }
@@ -130,6 +201,16 @@ export class DamageSystem implements System {
         if (!player.active || !projectile.active) continue;
 
         if (player.invulnerabilityTimer <= 0) {
+            
+            // --- SHIELD CHECK ---
+            if (player.currentShields > 0) {
+                player.currentShields--;
+                player.invulnerabilityTimer = 0.5;
+                player.shieldHitAnimTimer = 0.2;
+                projectile.active = false; // Block projectile
+                continue;
+            }
+
             const rawDamage = projectile.damage;
             const mitigation = player.damageReduction || 0;
             const actualDamage = Math.max(1, rawDamage * (1 - mitigation));
@@ -163,25 +244,18 @@ export class DamageSystem implements System {
       let currentDamage = projectile.damage;
       let bounces = projectile.bouncesRemaining;
       
-      // Initialize hit history with the enemy we just hit
       const hitIds = [...projectile.hitEntityIds, hitEnemy.id];
 
-      // Instant Chain Loop
       while (bounces > 0) {
-          // Find nearest valid target
           const candidates = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
           let closest: EnemyEntity | null = null;
           let minDst = Infinity;
           
-          const maxDist = projectile.ricochetSearchRadius || 200; // Fallback default
+          const maxDist = projectile.ricochetSearchRadius || 200; 
 
           for (const cand of candidates) {
-              // Conditions:
-              // 1. Must be active (alive)
-              // 2. Must NOT have been hit by this chain already (avoids A->B->A loops)
               if (!cand.active || hitIds.includes(cand.id)) continue;
               
-              // 3. Must be ON-SCREEN (Ricochet Containment)
               if (cand.position.x < 0 || cand.position.x > state.worldWidth || 
                   cand.position.y < 0 || cand.position.y > state.worldHeight) {
                   continue;
@@ -189,7 +263,6 @@ export class DamageSystem implements System {
 
               const d = Vec2.dist(currentSource.position, cand.position);
               
-              // 4. Must be within Search Radius (Local chaining)
               if (d > maxDist) continue;
 
               if (d < minDst) {
@@ -198,16 +271,11 @@ export class DamageSystem implements System {
               }
           }
 
-          // If no valid target found within radius, stop chaining
           if (!closest) break;
 
-          // --- Process the Chain Hit ---
-          
-          // 1. Calculate Decay Damage
           const decayFactor = 0.8;
           currentDamage = Math.ceil(currentDamage * decayFactor);
           
-          // 2. Apply Damage
           let appliedDamage = currentDamage;
           if (closest.variant === EnemyVariant.Tank) {
               appliedDamage *= 0.6;
@@ -215,13 +283,11 @@ export class DamageSystem implements System {
           closest.health -= appliedDamage;
           closest.hitFlashTimer = 0.1;
 
-          // 3. Create Visual Trail (Particle)
-          // Polished: Faster fade (0.15s), distinct style
           const particle: ParticleEntity = {
               id: `part_rico_${Date.now()}_${Math.random()}`,
               type: EntityType.Particle,
               style: 'ricochet_trail',
-              position: { ...currentSource.position }, // Satisfy BaseEntity interface
+              position: { ...currentSource.position }, 
               velocity: { x: 0, y: 0 },
               radius: 0,
               rotation: 0,
@@ -229,19 +295,17 @@ export class DamageSystem implements System {
               active: true,
               from: { ...currentSource.position },
               to: { ...closest.position },
-              lifetime: 0.15, // 150ms fade (Snappier)
+              lifetime: 0.15, 
               maxLifetime: 0.15,
-              width: 2 // Thinner for a sharper look
+              width: 2 
           };
           state.entityManager.add(particle);
 
-          // 4. Check Death
           if (closest.health <= 0) {
               closest.active = false;
               state.score += closest.value;
           }
 
-          // 5. Prepare for Next Loop
           hitIds.push(closest.id);
           currentSource = closest;
           bounces--;
