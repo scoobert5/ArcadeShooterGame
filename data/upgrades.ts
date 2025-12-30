@@ -37,13 +37,13 @@ export const CHAINS: UpgradeChain[] = [
         suffix: 'II',
         description: '+1 Charge, +Distance, +Trail Duration.',
         rarity: UpgradeRarity.Epic,
-        apply: (p) => { p.maxDashCharges += 1; p.dashTrailDuration += 0.3; p.dashDuration += 0.05; }
+        apply: (p) => { p.maxDashCharges += 1; p.dashTrailDuration += 1.0; p.dashDuration += 0.05; }
       },
       {
         suffix: 'III',
         description: '+1 Charge, +Distance, +Trail Damage.',
         rarity: UpgradeRarity.Epic,
-        apply: (p) => { p.maxDashCharges += 1; p.dashTrailDamage += 10; p.dashDuration += 0.05; }
+        apply: (p) => { p.maxDashCharges += 1; p.dashTrailDamage += 10; p.dashDuration += 0.05; p.dashTrailDuration += 1.0; }
       },
       {
         suffix: 'Phase Shift',

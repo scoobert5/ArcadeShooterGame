@@ -78,6 +78,7 @@ export interface PlayerEntity extends BaseEntity {
   dashTrailDuration: number; // How long trail lasts (upgradeable)
   dashTrailDamage: number;
   dashFatigue: number; // 0 to 1, increases with rapid use
+  activeDashTrailId?: string; // ID of the currently forming dash trail
 
   // Shield Ability
   currentShields: number;

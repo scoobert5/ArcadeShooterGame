@@ -172,9 +172,10 @@ export class GameEngine {
       dashDuration: BALANCE.PLAYER.DASH_DURATION,
       dashTimer: 0,
       dashTrailTimer: 0,
-      dashTrailDuration: 0.5,
+      dashTrailDuration: 3.0, // Base duration set to 3s per requirements
       dashTrailDamage: BALANCE.PLAYER.DASH_TRAIL_DAMAGE,
       dashFatigue: 0,
+      activeDashTrailId: undefined,
 
       // Shield Ability
       currentShields: 0,

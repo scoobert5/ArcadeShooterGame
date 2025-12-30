@@ -13,9 +13,6 @@ export class PlayerSystem implements System {
     // Reset Speed Multiplier (Hazards will re-apply it if necessary)
     player.speedMultiplier = 1.0;
 
-    // Capture position BEFORE movement (for continuous trails)
-    const prevPosition = { ...player.position };
-
     // 0. Update Timers
     if (player.invulnerabilityTimer > 0) {
       player.invulnerabilityTimer -= dt;
@@ -89,8 +86,18 @@ export class PlayerSystem implements System {
     if (player.isDashing) {
         player.dashTimer -= dt;
         
+        // UPDATE ACTIVE TRAIL END POINT
+        if (player.activeDashTrailId) {
+            const trail = state.entityManager.getAll().find(e => e.id === player.activeDashTrailId);
+            if (trail) {
+                // Update 'to' position to stretch the line
+                (trail as HazardEntity).to = { ...player.position };
+            }
+        }
+
         if (player.dashTimer <= 0) {
             player.isDashing = false;
+            player.activeDashTrailId = undefined; // Detach from trail
         }
     } else {
         // Normal Movement
@@ -125,6 +132,28 @@ export class PlayerSystem implements System {
             // Apply high velocity
             const dashSpeed = 1000 * fatigueFactor; 
             player.velocity = Vec2.scale(dashDir, dashSpeed);
+            
+            // --- SPAWN SINGLE TRAIL ENTITY ---
+            const trail: HazardEntity = {
+                id: `trail_${Date.now()}_${Math.random()}`,
+                type: EntityType.Hazard,
+                position: { ...player.position }, // Start Point for hit detection optimization
+                velocity: { x: 0, y: 0 },
+                radius: 12, // Thickness
+                rotation: 0,
+                color: Colors.DashTrail,
+                active: true,
+                damage: player.dashTrailDamage,
+                lifetime: player.dashTrailDuration,
+                maxLifetime: player.dashTrailDuration,
+                tickTimer: 0.1, 
+                isPlayerOwned: true,
+                style: 'line',
+                from: { ...player.position },
+                to: { ...player.position } // Init to same spot, will stretch in update loop
+            };
+            state.entityManager.add(trail);
+            player.activeDashTrailId = trail.id;
         }
     }
 
@@ -135,30 +164,6 @@ export class PlayerSystem implements System {
     // Clamp to Screen Boundaries
     player.position.x = Math.max(player.radius, Math.min(state.worldWidth - player.radius, player.position.x));
     player.position.y = Math.max(player.radius, Math.min(state.worldHeight - player.radius, player.position.y));
-
-    // --- AFTER MOVEMENT: SPAWN DASH TRAIL ---
-    if (player.isDashing) {
-        // Create a line segment hazard from previous position to new position
-        const trail: HazardEntity = {
-            id: `trail_${Date.now()}_${Math.random()}`,
-            type: EntityType.Hazard,
-            position: { ...player.position }, // Centroid (approximated, logic uses from/to)
-            velocity: { x: 0, y: 0 },
-            radius: 12, // Thickness
-            rotation: 0,
-            color: Colors.DashTrail,
-            active: true,
-            damage: player.dashTrailDamage,
-            lifetime: player.dashTrailDuration,
-            maxLifetime: player.dashTrailDuration,
-            tickTimer: 0.1, 
-            isPlayerOwned: true,
-            style: 'line',
-            from: { ...prevPosition },
-            to: { ...player.position }
-        };
-        state.entityManager.add(trail);
-    }
 
     // 2. Rotation Logic (Face the mouse cursor)
     const dx = input.pointer.x - player.position.x;
