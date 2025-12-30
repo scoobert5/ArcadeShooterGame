@@ -20,7 +20,8 @@ export class WaveSystem implements System {
             // --- Wave End Healing (Percent of Missing Health) ---
             const missingHealth = state.player.maxHealth - state.player.health;
             if (missingHealth > 0) {
-                const healRatio = state.player.waveHealRatio || BALANCE.WAVE.HEAL_RATIO;
+                // Defense Synergy Tier 4: Adaptive Regen (More healing)
+                let healRatio = state.player.waveHealRatio || BALANCE.WAVE.HEAL_RATIO;
                 const healAmount = missingHealth * healRatio;
                 
                 state.player.health = Math.min(state.player.maxHealth, state.player.health + healAmount);
@@ -33,8 +34,13 @@ export class WaveSystem implements System {
             }
 
             // --- Meta Rewards for Clearing Wave ---
-            state.runMetaCurrency += 10;
-            state.runMetaXP += 50;
+            // GATE: No currency before Wave 10. Small XP drip for morale.
+            if (state.wave < 10) {
+                state.runMetaXP += 5; // Small Drip
+            } else {
+                state.runMetaCurrency += 10;
+                state.runMetaXP += 50;
+            }
         }
       }
     } 
@@ -53,12 +59,19 @@ export class WaveSystem implements System {
 
     if (state.isBossWave) {
         // BOSS WAVE LOGIC
-        // Only 1 enemy to spawn (The Boss)
+        // Boss waves also spawn minions in higher tiers (handled in EnemySystem spawning logic if budget > 1)
+        // But budget calc for boss is usually just 1 unless we want minions.
+        // Let's stick to 1 BOSS for now, minions spawn by boss mechanics or just wave weights.
+        // Prompt says "Wave 10+: All enemy types mixed".
+        // Let's set a budget for boss waves too if we want minions.
+        // For simplicity: Boss counts as 1 "Enemy" in the counter, but weights are handled.
+        // Actually, logic in EnemySystem handles BOSS weight = 1.0 -> Single Spawn.
         state.enemiesRemainingInWave = 1;
     } else {
-        // STANDARD WAVE LOGIC
-        const baseBudget = BALANCE.WAVE.BASE_BUDGET + (state.wave * BALANCE.WAVE.BUDGET_PER_WAVE);
-        state.enemiesRemainingInWave = Math.floor(baseBudget * BALANCE.WAVE.BUDGET_MULTIPLIER);
+        // STANDARD WAVE LOGIC: 10 + 2 per wave
+        // Wave 1 = 10 + (0 * 2) = 10
+        // Wave 2 = 10 + (1 * 2) = 12
+        state.enemiesRemainingInWave = BALANCE.WAVE.BASE_COUNT + (state.wave * BALANCE.WAVE.COUNT_PER_WAVE);
     }
     
     // Difficulty Multiplier: Linear continuous scaling

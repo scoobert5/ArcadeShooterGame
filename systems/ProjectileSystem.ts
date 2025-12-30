@@ -88,6 +88,13 @@ export class ProjectileSystem implements System {
       
       player.currentAmmo--;
       
+      // Update Shots Fired Counter (For Bullet Synergy T2)
+      player.shotsFired++;
+      
+      // SYNERGY: BULLET TIER 2 - Vulnerability
+      // "Every 5th bullet applies vulnerability"
+      const appliesVulnerability = player.synergyBulletTier >= 2 && (player.shotsFired % 5 === 0);
+
       // Check reload trigger on last shot
       if (player.currentAmmo <= 0) {
           player.isReloading = true;
@@ -104,6 +111,21 @@ export class ProjectileSystem implements System {
       const baseX = player.position.x + (Math.cos(aimAngle) * spawnOffset);
       const baseY = player.position.y + (Math.sin(aimAngle) * spawnOffset);
       
+      // SYNERGY: BULLET TIER 3 - Reduced Speed
+      let speed = PROJECTILE_SPEED;
+      if (player.synergyBulletTier >= 3) {
+          speed *= 0.8; // 20% slower
+      }
+
+      // SYNERGY: BULLET TIER 1/9 - Extra Ricochet
+      let bounces = player.ricochetBounces;
+      if (player.synergyBulletTier >= 1) bounces += 1;
+      if (player.synergyBulletTier >= 9) bounces += 1;
+
+      // SYNERGY: BULLET TIER 5 - Piercing
+      let pierces = player.piercingCount;
+      if (player.synergyBulletTier >= 5) pierces += 1;
+
       // Loop: STREAMS (Split Shot)
       for (let s = 0; s < streamCount; s++) {
           let streamAngle = aimAngle;
@@ -115,8 +137,8 @@ export class ProjectileSystem implements System {
               streamAngle += startAngle + (step * s);
           }
 
-          const vx = Math.cos(streamAngle) * PROJECTILE_SPEED;
-          const vy = Math.sin(streamAngle) * PROJECTILE_SPEED;
+          const vx = Math.cos(streamAngle) * speed;
+          const vy = Math.sin(streamAngle) * speed;
 
           const projectile: ProjectileEntity = {
             id: `proj_${Date.now()}_${s}_${Math.random()}`,
@@ -125,16 +147,22 @@ export class ProjectileSystem implements System {
             velocity: { x: vx, y: vy },
             radius: PROJECTILE_RADIUS,
             rotation: streamAngle,
-            color: Colors.Projectile,
+            color: appliesVulnerability ? '#d946ef' : Colors.Projectile, // Purple if vuln shot
             active: true,
             damage: player.damage,
             lifetime: PROJECTILE_LIFETIME,
             ownerId: player.id,
             isEnemyProjectile: false,
             // Init Ricochet properties
-            bouncesRemaining: player.ricochetBounces,
+            bouncesRemaining: bounces,
             ricochetSearchRadius: player.ricochetSearchRadius,
             hitEntityIds: [],
+            // Pierce
+            piercesRemaining: pierces,
+            
+            // Synergy Flags
+            isVulnerabilityShot: appliesVulnerability,
+            isRicochet: false
           };
 
           state.entityManager.add(projectile);

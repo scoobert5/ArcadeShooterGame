@@ -87,12 +87,17 @@ export class GameState {
   // Upgrade State
   // Map of upgradeId -> count owned
   ownedUpgrades: Map<string, number>;
+  // Map of familyName -> count owned
+  purchasedFamilyCounts: Map<string, number>;
+  
   // Queue of upgrades to be processed by UpgradeSystem (external triggers)
   pendingUpgradeIds: string[];
   
   // Cache for quick access to the player entity (performance optimization)
   player: PlayerEntity | null = null; 
   isPlayerAlive: boolean;
+
+  debugMode: boolean = false; // For logging
 
   constructor() {
     this.entityManager = new EntityManager();
@@ -135,6 +140,7 @@ export class GameState {
     this.playerHitEvents = [];
     this.playerProjectileCollisionEvents = [];
     this.ownedUpgrades = new Map();
+    this.purchasedFamilyCounts = new Map();
     this.pendingUpgradeIds = [];
     this.isPlayerAlive = true;
   }
@@ -175,6 +181,7 @@ export class GameState {
     this.playerHitEvents = [];
     this.playerProjectileCollisionEvents = [];
     this.ownedUpgrades.clear();
+    this.purchasedFamilyCounts.clear();
     this.pendingUpgradeIds = [];
     this.player = null;
     this.areUpgradesExhausted = false;

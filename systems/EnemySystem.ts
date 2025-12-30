@@ -40,8 +40,8 @@ export class EnemySystem implements System {
             state.enemySpawnTimer = 0.05; // Extremely fast burst interval
         } else {
             // Decide new spawn type
-            // 40% chance to start a burst if we have enough budget and NOT a boss wave
-            const isBurst = !state.isBossWave && Math.random() < 0.4 && state.enemiesRemainingInWave >= 6;
+            // FIX: Gated burst logic to Wave 3+ to prevent Wave 1 clumping
+            const isBurst = !state.isBossWave && state.wave > 2 && Math.random() < 0.3 && state.enemiesRemainingInWave >= 12;
             
             if (isBurst) {
                 // Swarm Logic: Larger groups (6-9 enemies) to encourage richochet chains
@@ -80,29 +80,40 @@ export class EnemySystem implements System {
       // Decrement AI State Timer
       enemy.aiStateTimer -= dt;
 
-      // --- SHOOTER AI & BOSS PULSE ---
+      // --- SHOOTER, BOSS, & TANK AI ---
       if (enemy.shootTimer !== undefined && enemy.shootTimer > 0) {
           enemy.shootTimer -= dt;
       }
 
-      // Boss Radial Pulse Logic (Constant Background Attack)
+      // Boss Radial Pulse
       if (enemy.variant === EnemyVariant.Boss) {
-           // Boss Pulse Logic
            if (enemy.shootTimer !== undefined && enemy.shootTimer <= 0) {
                this.fireRadialPulse(state, enemy);
-               enemy.shootTimer = 1.0; // Fire every 1 second
+               enemy.shootTimer = 1.0; 
            }
       }
 
-      // Shooter Firing Logic
+      // Tank Heavy Shot
+      if (enemy.variant === EnemyVariant.Tank && player) {
+          if (enemy.shootTimer === undefined) enemy.shootTimer = 3.0; // Slow init
+
+          const distToPlayer = Vec2.dist(enemy.position, player.position);
+          // Tanks shoot when somewhat close but not melee range, or just periodic
+          if (enemy.hasEnteredArena && enemy.shootTimer <= 0) {
+              this.fireTankShot(state, enemy, player);
+              // Slow fire rate: 3.5s - 5s
+              enemy.shootTimer = 3.5 + Math.random() * 1.5; 
+          }
+      }
+
+      // Shooter Fast Shot
       if (enemy.variant === EnemyVariant.Shooter && player) {
           if (enemy.shootTimer === undefined) enemy.shootTimer = 1.0; 
 
-          // Only fire if inside arena and relatively close
           const distToPlayer = Vec2.dist(enemy.position, player.position);
           if (enemy.hasEnteredArena && distToPlayer < 500 && enemy.shootTimer <= 0) {
               this.fireAtPlayer(state, enemy, player);
-              // Increased Cadence (+50% faster): Range 0.8s - 1.8s (Avg ~1.3s)
+              // Cadence: 0.8s - 1.8s
               enemy.shootTimer = 0.8 + Math.random(); 
           }
       }
@@ -507,7 +518,7 @@ export class EnemySystem implements System {
           const vy = Math.sin(angle) * speed;
           
           // Use Boss Projectile visuals
-          this.spawnEnemyProjectile(state, boss.position, { x: vx, y: vy }, boss.id, true);
+          this.spawnEnemyProjectile(state, boss.position, { x: vx, y: vy }, boss.id, true, false);
       }
   }
 
@@ -522,26 +533,55 @@ export class EnemySystem implements System {
       const vx = (dx / dist) * speed;
       const vy = (dy / dist) * speed;
 
-      this.spawnEnemyProjectile(state, enemy.position, { x: vx, y: vy }, enemy.id, false);
+      this.spawnEnemyProjectile(state, enemy.position, { x: vx, y: vy }, enemy.id, false, false);
   }
 
-  private spawnEnemyProjectile(state: GameState, position: Vector2, velocity: Vector2, ownerId: string, isBoss: boolean) {
+  private fireTankShot(state: GameState, enemy: EnemyEntity, player: PlayerEntity) {
+      const speed = 120; // Very slow, easy to dodge but menacing
+      const dx = player.position.x - enemy.position.x;
+      const dy = player.position.y - enemy.position.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      
+      if (dist === 0) return;
+      
+      const vx = (dx / dist) * speed;
+      const vy = (dy / dist) * speed;
+
+      this.spawnEnemyProjectile(state, enemy.position, { x: vx, y: vy }, enemy.id, false, true);
+  }
+
+  private spawnEnemyProjectile(state: GameState, position: Vector2, velocity: Vector2, ownerId: string, isBoss: boolean, isTank: boolean) {
+      let radius = 5;
+      let color = Colors.EnemyProjectile;
+      let damage = 10;
+
+      if (isBoss) {
+          radius = 7;
+          color = Colors.BossProjectile;
+      } else if (isTank) {
+          radius = 12; // Large
+          color = '#b91c1c'; // Dark Red
+          damage = 30; // Heavy Damage
+      }
+
       const projectile: ProjectileEntity = {
           id: `eproj_${Date.now()}_${Math.random()}`,
           type: EntityType.Projectile,
           position: { ...position },
           velocity: { ...velocity },
-          radius: isBoss ? 7 : 5, // Larger for Boss
+          radius: radius,
           rotation: Math.atan2(velocity.y, velocity.x),
-          color: isBoss ? Colors.BossProjectile : Colors.EnemyProjectile, // Different Colors
+          color: color,
           active: true,
-          damage: 10, 
+          damage: damage, 
           lifetime: 5.0,
           ownerId: ownerId,
           isEnemyProjectile: true,
           bouncesRemaining: 0,
           ricochetSearchRadius: 0,
-          hitEntityIds: []
+          hitEntityIds: [],
+          piercesRemaining: 0,
+          isTankShot: isTank
       };
       
       state.entityManager.add(projectile);
@@ -651,8 +691,9 @@ export class EnemySystem implements System {
     let x, y;
 
     if (useBurst && this.burstLocation) {
-        x = this.burstLocation.x + (Math.random() * 40 - 20);
-        y = this.burstLocation.y + (Math.random() * 40 - 20);
+        // Increased jitter to 100px to prevent tight stacking
+        x = this.burstLocation.x + (Math.random() * 100 - 50);
+        y = this.burstLocation.y + (Math.random() * 100 - 50);
     } else {
         const loc = this.calculateSpawnPosition(state.worldWidth, state.worldHeight);
         x = loc.x;
@@ -728,7 +769,7 @@ export class EnemySystem implements System {
       orbitDir: Math.random() < 0.5 ? 1 : -1,
       hasEnteredArena: false,
       attackCooldown: 2.0,
-      shootTimer: (variant === EnemyVariant.Shooter || variant === EnemyVariant.Boss) ? 2.0 : undefined
+      shootTimer: (variant === EnemyVariant.Shooter || variant === EnemyVariant.Boss || variant === EnemyVariant.Tank) ? 2.0 : undefined
     };
 
     state.entityManager.add(enemy);

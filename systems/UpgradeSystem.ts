@@ -1,8 +1,8 @@
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
 import { PlayerEntity } from '../entities/types';
-import { CHAINS } from '../data/upgrades';
-import { getUpgradeCost } from '../config/balance';
+import { CHAINS, SYNERGY_LEVELS } from '../data/upgrades';
+import { calculateUpgradeCost } from '../utils/economy';
 
 export class UpgradeSystem implements System {
   update(dt: number, state: GameState) {
@@ -16,7 +16,35 @@ export class UpgradeSystem implements System {
   }
 
   /**
+   * Calculates active synergy tiers based on investment.
+   * Tracks 10 tiers per family at intervals of 3 levels.
+   */
+  private updateSynergies(player: PlayerEntity, state: GameState) {
+      const bulletLevels = state.purchasedFamilyCounts.get('BULLETS') || 0;
+      const mobilityLevels = state.purchasedFamilyCounts.get('MOBILITY') || 0;
+      const defenseLevels = state.purchasedFamilyCounts.get('DEFENSE') || 0;
+
+      // Helper to find highest active tier
+      const getTier = (levels: number, family: 'BULLETS' | 'DEFENSE' | 'MOBILITY') => {
+          let tier = 0;
+          for (const m of SYNERGY_LEVELS[family]) {
+              if (levels >= m.levelsRequired) {
+                  tier = m.tier;
+              } else {
+                  break; 
+              }
+          }
+          return tier;
+      };
+
+      player.synergyBulletTier = getTier(bulletLevels, 'BULLETS');
+      player.synergyDefenseTier = getTier(defenseLevels, 'DEFENSE');
+      player.synergyMobilityTier = getTier(mobilityLevels, 'MOBILITY');
+  }
+
+  /**
    * Applies the NEXT level of an upgrade chain.
+   * Tracks family investment but DOES NOT deduct score (handled by buyUpgrade).
    */
   public applyUpgrade(state: GameState, upgradeId: string): boolean {
     const player = state.player;
@@ -37,7 +65,6 @@ export class UpgradeSystem implements System {
     }
 
     // Get the tier corresponding to the NEW level (0-indexed array)
-    // Level 0 -> Apply Tier 0. New Level becomes 1.
     const tierToApply = chain.tiers[currentLevel];
 
     // Apply the Effect
@@ -46,17 +73,26 @@ export class UpgradeSystem implements System {
     // Update Ownership (Increment Level)
     state.ownedUpgrades.set(upgradeId, currentLevel + 1);
     
-    console.log(`Applied upgrade: ${chain.baseName} ${tierToApply.suffix} (Level: ${currentLevel + 1}/${chain.tiers.length})`);
+    // Update Family Count
+    const family = chain.family;
+    const famCount = state.purchasedFamilyCounts.get(family) || 0;
+    state.purchasedFamilyCounts.set(family, famCount + 1);
+
+    // Recalculate Synergies
+    this.updateSynergies(player, state);
+
+    if (state.debugMode) {
+        console.log(`Applied upgrade: ${chain.baseName} ${tierToApply.suffix} (Level: ${currentLevel + 1}). Family: ${family}`);
+    }
     return true;
   }
 
   public buyUpgrade(state: GameState, upgradeId: string): boolean {
-      const currentLevel = state.ownedUpgrades.get(upgradeId) || 0;
-      const cost = getUpgradeCost(currentLevel);
+      // Use the new economy calculator
+      const cost = calculateUpgradeCost(state, upgradeId);
 
       // Validation
       if (state.score < cost) return false;
-      // Removed wave lock check
       
       const success = this.applyUpgrade(state, upgradeId);
       if (success) {

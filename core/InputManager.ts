@@ -56,15 +56,25 @@ export class InputManager {
    * to prevent "stuck" keys or accidental firing.
    */
   reset() {
+      this.resetAll();
+  }
+
+  /**
+   * Authoritative reset of all inputs.
+   * Clears movement, fire, ability, and utility flags.
+   * Forces the user to re-press keys/buttons to trigger actions again.
+   */
+  resetAll() {
     this.state.up = false;
     this.state.down = false;
     this.state.left = false;
     this.state.right = false;
-    this.state.fire = false;
+    this.state.fire = false; // Clears auto-fire
     this.state.ability = false;
     this.state.dash = false;
     this.state.reload = false;
     this.state.escape = false;
+    // Note: We do NOT reset pointer position as that would cause a jump
   }
 
   private handleContextMenu = (e: MouseEvent) => {

@@ -85,6 +85,14 @@ export interface PlayerEntity extends BaseEntity {
   maxShields: number; // 0 means locked
   shieldHitAnimTimer: number; // Visual pop for shield hit (Used for pop visual)
   shieldPopTimer: number; // Dedicated timer for the burst effect
+  
+  // SYNERGY STATE
+  synergyBulletTier: number; // 0-10
+  synergyMobilityTier: number; // 0-10
+  synergyDefenseTier: number; // 0-10
+  
+  shotsFired: number; // Counter for Bullet Synergy
+  shieldRegenTimer: number; // Timer for Defense Synergy
 
   // Offensive Stats & Burst Logic
   projectileCount: number; // Number of projectiles fired per stream (Multi-Shot)
@@ -92,6 +100,7 @@ export interface PlayerEntity extends BaseEntity {
   splitAngle: number; // Total arc in radians for split shot (0 = parallel)
   ricochetBounces: number; // How many times projectiles bounce (Ricochet)
   ricochetSearchRadius: number; // Max distance to look for next ricochet target
+  piercingCount: number; // Number of enemies a bullet can pass through
   
   // Multi-Shot Bursting
   burstQueue: number; // How many shots left to fire in current burst
@@ -106,6 +115,26 @@ export interface PlayerEntity extends BaseEntity {
   // Defensive Stats
   damageReduction: number; // Percentage reduction (0.0 to 1.0)
   waveHealRatio: number; // Percentage of MISSING health to heal (0.0 to 1.0)
+  thornsDamage: number; // Damage returned on hit
+  dodgeChance: number; // Chance to ignore damage (0.0 to 1.0)
+  reactivePulseOnHit: boolean; // Trigger pulse when hit
+  
+  // Mobility Mechanics
+  dashReloadAmount: number; // Ammo amount reloaded on dash
+  momentumDamageMult: number; // Damage multiplier based on speed
+  moveSpeedShieldRegen: boolean; // Regen shield faster while moving
+  postDashDamageBuff: number; // Multiplier for 1s after dash
+  postDashTimer: number; // Timer for buffs
+  
+  // NEW MECHANICS (Step 22 Expansion)
+  focusFireTarget?: string; // ID of enemy last hit
+  focusFireStacks: number; // Current bonus damage stacks
+  cullingThreshold: number; // HP% to execute/bonus damage
+  shieldSiphonChance: number; // Chance to regen shield on kill
+  fortressTimer: number; // How long player has been stationary
+  staticCharge: number; // Built up charge from movement
+  afterburnerEnabled: boolean; // Spawns fire trails on dash
+  nitroEnabled: boolean; // Converts speed to fire rate
 }
 
 // Added 'telegraph_hazard' and 'spawn_hazard'
@@ -134,6 +163,9 @@ export interface EnemyEntity extends BaseEntity {
   
   // Ranged & Boss Pulse Logic
   shootTimer?: number; 
+
+  // Status Effects
+  vulnerableTimer?: number; // Takes increased damage if > 0
 }
 
 export interface ProjectileEntity extends BaseEntity {
@@ -143,10 +175,17 @@ export interface ProjectileEntity extends BaseEntity {
   ownerId: string;  // ID of the entity that fired this projectile
   isEnemyProjectile: boolean; // True if fired by an enemy (hurts player, ignored by enemies)
   
-  // Ricochet State
+  // Ricochet & Pierce State
   bouncesRemaining: number;
+  piercesRemaining: number; // New: Number of enemies to pass through
   ricochetSearchRadius: number; // Inherited from player at moment of firing
   hitEntityIds: string[]; // Track which enemies have been hit to prevent bouncing back
+  
+  // Synergy Properties
+  isVulnerabilityShot?: boolean; // Applies vuln on hit
+  isRicochet?: boolean; // Is this a bounced projectile?
+  isTankShot?: boolean; // Is this a large tank projectile?
+  isStaticShot?: boolean; // Consumes static charge for AoE/Dmg
 }
 
 export interface ParticleEntity extends BaseEntity {

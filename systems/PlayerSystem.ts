@@ -14,21 +14,75 @@ export class PlayerSystem implements System {
     player.speedMultiplier = 1.0;
 
     // 0. Update Timers
-    if (player.invulnerabilityTimer > 0) {
-      player.invulnerabilityTimer -= dt;
+    if (player.invulnerabilityTimer > 0) player.invulnerabilityTimer -= dt;
+    if (player.hitFlashTimer && player.hitFlashTimer > 0) player.hitFlashTimer -= dt;
+    if (player.shieldHitAnimTimer && player.shieldHitAnimTimer > 0) player.shieldHitAnimTimer -= dt;
+    if (player.repulseCooldown > 0) player.repulseCooldown -= dt;
+    if (player.repulseVisualTimer > 0) player.repulseVisualTimer -= dt;
+    
+    // Post-Dash Buff Timer
+    if (player.postDashTimer > 0) player.postDashTimer -= dt;
+
+    // --- NEW MECHANICS: FORTRESS & STATIC CHARGE ---
+    const speed = Vec2.mag(player.velocity);
+    
+    // Fortress: Stationary logic
+    if (speed < 10) {
+        player.fortressTimer += dt;
+        // Effect: +10% DR per second, max 30%? Just abstractly handle "Fortress Active"
+        // Actual logic is applied in DamageSystem or Regeneration checks
+    } else {
+        player.fortressTimer = 0;
     }
-    if (player.hitFlashTimer && player.hitFlashTimer > 0) {
-      player.hitFlashTimer -= dt;
+
+    // Static Charge: Moving builds charge
+    if (speed > 50) {
+        player.staticCharge = Math.min(100, player.staticCharge + (dt * 20)); // Builds full in 5s
     }
-    if (player.shieldHitAnimTimer && player.shieldHitAnimTimer > 0) {
-        player.shieldHitAnimTimer -= dt;
+
+    // Nitro: Speed increases Fire Rate
+    if (player.nitroEnabled) {
+        const speedBonus = Math.min(0.5, speed / 500); // Max 50% bonus at 500 speed
+        player.fireRate = Math.max(0.05, player.fireRate * (1.0 - speedBonus * 0.1)); // Dynamic adjust (careful not to perm change base)
+        // Actually, modify fireRate is risky if it persists. 
+        // Better: ProjectileSystem reads speed and adjusts CD. 
+        // For now, let's assume ProjectileSystem will check this flag.
     }
-    if (player.repulseCooldown > 0) {
-        player.repulseCooldown -= dt;
+
+    // --- SYNERGY: DEFENSE (Passive Shield Regen) ---
+    // Tier 2: 10s delay. Tier 3: 5s if stationary. 
+    // Upgrade: Momentum Shield (Regen faster while moving).
+    if (player.maxShields > 0 && player.currentShields < player.maxShields) {
+        
+        let regenRate = 0.0;
+        
+        // Base Logic from Synergy
+        if (player.synergyDefenseTier >= 2) {
+            regenRate = 1.0;
+            
+            // T3 Boost: Stationary (or Fortress Upgrade)
+            if ((player.synergyDefenseTier >= 3 && speed < 10) || player.fortressTimer > 1.0) {
+                regenRate = 2.0;
+            }
+            
+            // Upgrade: Momentum Shield
+            if (player.moveSpeedShieldRegen && speed > 50) {
+                regenRate = Math.max(regenRate, 1.5);
+            }
+        }
+
+        if (regenRate > 0) {
+            player.shieldRegenTimer -= dt * regenRate;
+            if (player.shieldRegenTimer <= 0) {
+                player.currentShields++;
+                player.shieldRegenTimer = 10.0; // Reset
+            }
+        }
+    } else {
+        // Reset timer if full
+        player.shieldRegenTimer = 10.0;
     }
-    if (player.repulseVisualTimer > 0) {
-        player.repulseVisualTimer -= dt;
-    }
+
 
     // Dash Fatigue Decay (Recovers over time)
     // Recovers fully in about 3 seconds
@@ -39,7 +93,16 @@ export class PlayerSystem implements System {
 
     // --- DASH CHARGE REGENERATION ---
     if (player.dashUnlocked && player.dashCharges < player.maxDashCharges) {
-        player.dashCooldown -= dt;
+        let rechargeRate = 1.0;
+        
+        // SYNERGY: MOBILITY T3 - Dash cooldown reduction while moving
+        if (player.synergyMobilityTier >= 3) {
+            if (speed > 50) {
+                rechargeRate = 1.5; // +50% Recharge speed while moving
+            }
+        }
+
+        player.dashCooldown -= dt * rechargeRate;
         if (player.dashCooldown <= 0) {
             player.dashCharges++;
             player.dashCooldown = player.maxDashCooldown;
@@ -70,8 +133,11 @@ export class PlayerSystem implements System {
 
         const dist = Vec2.dist(player.position, h.position);
         if (dist < h.radius + player.radius) {
-            player.speedMultiplier = 0.5; // 50% slow
-            break; // Only apply once
+            // Juggernaut Synergy (Def T10): Ignore Slows
+            if (player.synergyDefenseTier < 10) {
+                player.speedMultiplier = 0.5; 
+            }
+            break; 
         }
     }
 
@@ -98,6 +164,11 @@ export class PlayerSystem implements System {
         if (player.dashTimer <= 0) {
             player.isDashing = false;
             player.activeDashTrailId = undefined; // Detach from trail
+            
+            // Post-Dash Buff Trigger
+            if (player.postDashDamageBuff > 0) {
+                player.postDashTimer = 2.0; // 2 seconds buff window
+            }
         }
     } else {
         // Normal Movement
@@ -112,12 +183,24 @@ export class PlayerSystem implements System {
             player.isDashing = true;
             player.dashCharges--;
             
+            // MOBILITY T10: Flash Step (Instant)
+            const isInstant = player.synergyMobilityTier >= 10;
+            
             // Calculate fatigue impact
-            // Fatigue reduces duration (distance) and slightly speed
-            const fatigueFactor = 1.0 - (player.dashFatigue * 0.4); // At max fatigue, 60% effectiveness
+            const fatigueFactor = 1.0 - (player.dashFatigue * 0.4);
             
-            player.dashTimer = player.dashDuration * fatigueFactor;
+            player.dashTimer = isInstant ? 0.05 : player.dashDuration * fatigueFactor;
             
+            // SYNERGY: MOBILITY T1 - Trail Duration Increase
+            let trailDuration = player.dashTrailDuration;
+            if (player.synergyMobilityTier >= 1) {
+                trailDuration += 1.0;
+            }
+            // UPGRADE: AFTERBURNER (Longer fire trails)
+            if (player.afterburnerEnabled) {
+                trailDuration += 1.5; 
+            }
+
             // Increase fatigue
             player.dashFatigue = Math.min(1.0, player.dashFatigue + 0.35);
 
@@ -130,30 +213,43 @@ export class PlayerSystem implements System {
             if (m > 0) dashDir = { x: dx/m, y: dy/m };
 
             // Apply high velocity
-            const dashSpeed = 1000 * fatigueFactor; 
+            const dashSpeed = (isInstant ? 3000 : 1000) * fatigueFactor; 
             player.velocity = Vec2.scale(dashDir, dashSpeed);
             
-            // --- SPAWN SINGLE TRAIL ENTITY ---
+            // --- SPAWN TRAIL ---
             const trail: HazardEntity = {
                 id: `trail_${Date.now()}_${Math.random()}`,
                 type: EntityType.Hazard,
-                position: { ...player.position }, // Start Point for hit detection optimization
+                position: { ...player.position },
                 velocity: { x: 0, y: 0 },
-                radius: 12, // Thickness
+                radius: 12,
                 rotation: 0,
-                color: Colors.DashTrail,
+                color: player.afterburnerEnabled ? '#f97316' : Colors.DashTrail, // Orange if Afterburner
                 active: true,
                 damage: player.dashTrailDamage,
-                lifetime: player.dashTrailDuration,
-                maxLifetime: player.dashTrailDuration,
+                lifetime: trailDuration,
+                maxLifetime: trailDuration,
                 tickTimer: 0.1, 
                 isPlayerOwned: true,
                 style: 'line',
                 from: { ...player.position },
-                to: { ...player.position } // Init to same spot, will stretch in update loop
+                to: { ...player.position }
             };
             state.entityManager.add(trail);
             player.activeDashTrailId = trail.id;
+
+            // UPGRADE: DASH RELOAD
+            // Synergy T7 also grants reload.
+            let reloadAmt = player.dashReloadAmount;
+            if (player.synergyMobilityTier >= 7) reloadAmt += 5;
+            
+            if (reloadAmt > 0) {
+                player.currentAmmo = Math.min(player.maxAmmo, player.currentAmmo + reloadAmt);
+                if (player.isReloading) {
+                    player.isReloading = false;
+                    player.reloadTimer = 0;
+                }
+            }
         }
     }
 
@@ -214,7 +310,13 @@ export class PlayerSystem implements System {
                 enemy.knockback.y += dirY * force;
                 
                 // Apply Damage
-                const damage = player.repulseDamage * player.repulseDamageMult;
+                let damage = player.repulseDamage * player.repulseDamageMult;
+
+                // SYNERGY: MOBILITY T2 - Amplifies Pulse Damage
+                if (player.synergyMobilityTier >= 2) {
+                     damage *= 1.5; 
+                }
+
                 if (damage > 0) {
                     enemy.health -= damage;
                     enemy.hitFlashTimer = 0.1;

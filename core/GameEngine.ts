@@ -124,7 +124,7 @@ export class GameEngine {
 
   private resetRunState() {
     this.state.reset();
-    this.inputManager.reset();
+    this.inputManager.resetAll(); // Explicit full reset
     this.lastEnemiesRemaining = -1;
     this.lastPlayerHealth = BALANCE.PLAYER.BASE_HP;
     this.lastBossHealth = -1;
@@ -189,6 +189,13 @@ export class GameEngine {
       shieldHitAnimTimer: 0,
       shieldPopTimer: 0,
 
+      // SYNERGY STATE
+      synergyBulletTier: 0,
+      synergyMobilityTier: 0,
+      synergyDefenseTier: 0,
+      shotsFired: 0,
+      shieldRegenTimer: 0,
+
       // Initial Upgradable Stats
       speed: BALANCE.PLAYER.BASE_SPEED,
       speedMultiplier: 1.0,
@@ -201,13 +208,34 @@ export class GameEngine {
       splitAngle: 0.3,
       ricochetBounces: 0,
       ricochetSearchRadius: BALANCE.PLAYER.BASE_RICOCHET_RADIUS,
+      piercingCount: 0,
       
       // Burst
       burstQueue: 0,
       burstTimer: 0,
 
+      // Defensive Stats
       damageReduction: 0,
-      waveHealRatio: BALANCE.WAVE.HEAL_RATIO
+      waveHealRatio: BALANCE.WAVE.HEAL_RATIO,
+      thornsDamage: 0,
+      dodgeChance: 0,
+      reactivePulseOnHit: false,
+
+      // Mobility Mechanics
+      dashReloadAmount: 0,
+      momentumDamageMult: 0,
+      moveSpeedShieldRegen: false,
+      postDashDamageBuff: 0,
+      postDashTimer: 0,
+
+      // NEW EXPANDED MECHANICS
+      focusFireStacks: 0,
+      cullingThreshold: 0,
+      shieldSiphonChance: 0,
+      fortressTimer: 0,
+      staticCharge: 0,
+      afterburnerEnabled: false,
+      nitroEnabled: false
     };
     
     this.state.entityManager.add(player);
@@ -229,11 +257,11 @@ export class GameEngine {
     if (this.state.status === GameStatus.Playing || this.state.status === GameStatus.WaveIntro) {
       this.state.previousStatus = this.state.status;
       this.state.status = GameStatus.Paused;
-      this.inputManager.reset(); // Prevent stuck keys
+      this.inputManager.resetAll(); // Prevent stuck keys
       this.emit('status_change', this.state.status);
     } else if (this.state.status === GameStatus.Paused) {
       this.state.status = this.state.previousStatus;
-      this.inputManager.reset(); // Prevent stuck keys
+      this.inputManager.resetAll(); // Prevent stuck keys
       this.emit('status_change', this.state.status);
     }
   }
@@ -245,7 +273,7 @@ export class GameEngine {
     // If open, close it
     if (this.state.status === GameStatus.DevConsole) {
         this.state.status = this.state.previousStatus;
-        this.inputManager.reset();
+        this.inputManager.resetAll();
         this.emit('status_change', this.state.status);
     } 
     // If closed (and game is running/paused/shop), open it
@@ -253,12 +281,12 @@ export class GameEngine {
         this.state.status === GameStatus.Playing || 
         this.state.status === GameStatus.WaveIntro || 
         this.state.status === GameStatus.Paused || 
-        this.state.status === GameStatus.Shop ||
+        this.state.status === GameStatus.Shop || 
         this.state.status === GameStatus.Extraction
     ) {
         this.state.previousStatus = this.state.status;
         this.state.status = GameStatus.DevConsole;
-        this.inputManager.reset();
+        this.inputManager.resetAll();
         this.emit('status_change', this.state.status);
     }
   }
@@ -278,7 +306,7 @@ export class GameEngine {
    */
   openDevShop() {
       this.state.status = GameStatus.Shop;
-      this.inputManager.reset();
+      this.inputManager.resetAll();
       this.emit('status_change', this.state.status);
   }
 
@@ -320,7 +348,7 @@ export class GameEngine {
       if (this.state.status !== GameStatus.Shop) return;
       
       this.startWaveIntro();
-      this.inputManager.reset();
+      this.inputManager.resetAll();
   }
 
   /**
@@ -341,7 +369,7 @@ export class GameEngine {
 
       // Transition to Success Screen
       this.state.status = GameStatus.ExtractionSuccess;
-      this.inputManager.reset(); // CRITICAL: Reset inputs before screen switch
+      this.inputManager.resetAll(); // CRITICAL: Reset inputs before screen switch
       this.emit('status_change', this.state.status);
   }
 
@@ -369,13 +397,13 @@ export class GameEngine {
       this.state.status = GameStatus.Shop;
       this.emit('status_change', this.state.status);
       this.emit('wave_change', this.state.wave);
-      this.inputManager.reset();
+      this.inputManager.resetAll();
   }
 
   resumeGame() {
     if (this.state.status === GameStatus.Paused) {
       this.state.status = this.state.previousStatus;
-      this.inputManager.reset(); // Prevent stuck keys
+      this.inputManager.resetAll(); // Prevent stuck keys
       this.emit('status_change', this.state.status);
     }
   }
@@ -383,7 +411,7 @@ export class GameEngine {
   quitGame() {
     this.state.status = GameStatus.Menu;
     this.loop.stop();
-    this.inputManager.reset(); // Prevent stuck keys
+    this.inputManager.resetAll(); // Prevent stuck keys
     this.emit('status_change', this.state.status);
   }
 
@@ -397,7 +425,11 @@ export class GameEngine {
       this.state.waveActive = false; // Wave System should not check clear condition
       
       // CRITICAL: Reset inputs on start of any wave (including boss intro)
-      this.inputManager.reset(); 
+      this.inputManager.resetAll(); 
+      if (this.state.player) {
+          this.state.player.wantsToFire = false;
+          this.state.player.burstQueue = 0; // Clear burst buffer
+      }
 
       // Auto-Fill Ammo Loop Fix
       if (this.state.player) {
@@ -463,6 +495,11 @@ export class GameEngine {
             // Start the wave!
             this.state.status = GameStatus.Playing;
             this.state.waveActive = true;
+            this.inputManager.resetAll(); // CRITICAL: Reset again on exact moment of transition to prevent ghost inputs
+            // Ensure no latent firing state on frame 1
+            if (this.state.player) {
+                this.state.player.wantsToFire = false;
+            }
             this.emit('status_change', this.state.status);
         }
         
@@ -495,7 +532,7 @@ export class GameEngine {
     // 6. Game Over Check (Death)
     if (!this.state.isPlayerAlive) {
       this.state.status = GameStatus.GameOver;
-      this.inputManager.reset(); // CRITICAL: Reset inputs on death
+      this.inputManager.resetAll(); // CRITICAL: Reset inputs on death
       
       // DEATH PENALTY LOGIC
       if (this.state.hasDefeatedFirstBoss) {
@@ -536,7 +573,7 @@ export class GameEngine {
             this.state.waveCleared = false;
             
             this.emit('status_change', this.state.status);
-            this.inputManager.reset(); // CRITICAL: Reset inputs on extraction UI
+            this.inputManager.resetAll(); // CRITICAL: Reset inputs on extraction UI
             return;
         } else {
             // NORMAL FLOW
@@ -546,7 +583,7 @@ export class GameEngine {
             
             this.emit('status_change', this.state.status);
             this.emit('wave_change', this.state.wave);
-            this.inputManager.reset(); // CRITICAL: Reset inputs on shop open
+            this.inputManager.resetAll(); // CRITICAL: Reset inputs on shop open
             return; 
         }
     }

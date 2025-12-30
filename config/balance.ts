@@ -4,12 +4,9 @@ import { PLAYER_SPEED, PLAYER_FIRE_RATE, ENEMY_SPAWN_RATE, ENEMY_MIN_SPAWN_RATE 
 export const BALANCE = {
   // Wave & Difficulty Logic
   WAVE: {
-    // Enemy Counts
-    // Formula: (BASE + (Wave * PER_WAVE)) * MULTIPLIER
-    // Pacing Adjustment: Increased budget per wave slightly to extend midgame
-    BASE_BUDGET: 8,
-    BUDGET_PER_WAVE: 4,  // Was 3 - Slightly longer waves
-    BUDGET_MULTIPLIER: 3, 
+    // Enemy Counts: Wave 1 = 10, +2 per wave
+    BASE_COUNT: 10, 
+    COUNT_PER_WAVE: 2, 
 
     // Stat Scaling (Per Wave, Linear)
     HP_SCALING: 0.08,         // +8% HP per wave
@@ -25,12 +22,12 @@ export const BALANCE = {
   
   // Shop Logic
   SHOP: {
-    // Steeper scaling: +50% from previous
-    // Tier 1: 975 (Was 650)
-    // Tier 2: 3750 (Was 2500)
-    // Tier 3: 9750 (Was 6500)
-    // Tier 4: 22500 (Was 15000)
-    COSTS: [975, 3750, 9750, 22500] as const, 
+    // Steeper Scaling to force commitment
+    // T1: 1200 (Entry)
+    // T2: 3500 (Commitment)
+    // T3: 9000 (Specialization)
+    // T4: 22000 (Mastery)
+    COSTS: [1200, 3500, 9000, 22000] as const, 
   },
 
   // Default Player Stats (Initialization)
@@ -70,12 +67,22 @@ export const getUpgradeCost = (currentTierIndex: number): number => {
 export const getWaveEnemyWeights = (wave: number) => {
     // Every 10th wave is a BOSS WAVE
     if (wave % 10 === 0) {
+        // Boss waves might have minions in later stages
+        if (wave > 10) {
+             return {
+                [EnemyVariant.Basic]: 0.3,
+                [EnemyVariant.Fast]: 0.2,
+                [EnemyVariant.Tank]: 0.1,
+                [EnemyVariant.Shooter]: 0.1,
+                [EnemyVariant.Boss]: 0.3 
+            };
+        }
         return {
             [EnemyVariant.Basic]: 0.0,
             [EnemyVariant.Fast]: 0.0,
             [EnemyVariant.Tank]: 0.0,
             [EnemyVariant.Shooter]: 0.0,
-            [EnemyVariant.Boss]: 1.0 // 100% Boss
+            [EnemyVariant.Boss]: 1.0 
         };
     }
 
@@ -87,27 +94,32 @@ export const getWaveEnemyWeights = (wave: number) => {
         [EnemyVariant.Boss]: 0.0
     };
 
+    // Progressive Introduction
+    // Wave 3+: Fast
+    // Wave 6+: Tank
+    // Wave 9+: Shooter
+    
     if (wave >= 10) {
-        // High difficulty mix
+        // Mixed Bag (Chaotic)
         weights[EnemyVariant.Basic] = 0.3;
         weights[EnemyVariant.Fast] = 0.3;
         weights[EnemyVariant.Tank] = 0.2;
-        weights[EnemyVariant.Shooter] = 0.2; // Shooters are common
-    } else if (wave >= 7) {
+        weights[EnemyVariant.Shooter] = 0.2;
+    } else if (wave >= 9) {
         // Introduce Shooters
+        weights[EnemyVariant.Basic] = 0.4;
+        weights[EnemyVariant.Fast] = 0.3;
+        weights[EnemyVariant.Tank] = 0.2;
+        weights[EnemyVariant.Shooter] = 0.1; 
+    } else if (wave >= 6) {
+        // Introduce Tanks
         weights[EnemyVariant.Basic] = 0.5;
         weights[EnemyVariant.Fast] = 0.3;
-        weights[EnemyVariant.Tank] = 0.1;
-        weights[EnemyVariant.Shooter] = 0.1; 
-    } else if (wave >= 5) {
-        // Introduce Tanks
-        weights[EnemyVariant.Basic] = 0.6;
-        weights[EnemyVariant.Fast] = 0.3;
-        weights[EnemyVariant.Tank] = 0.1;
+        weights[EnemyVariant.Tank] = 0.2;
     } else if (wave >= 3) {
         // Introduce Fast enemies
-        weights[EnemyVariant.Basic] = 0.8;
-        weights[EnemyVariant.Fast] = 0.2;
+        weights[EnemyVariant.Basic] = 0.7;
+        weights[EnemyVariant.Fast] = 0.3;
     } 
     
     return weights;

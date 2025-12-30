@@ -1,6 +1,6 @@
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
-import { EntityType, EnemyEntity, EnemyVariant, ProjectileEntity, ParticleEntity, HazardEntity } from '../entities/types';
+import { EntityType, EnemyEntity, EnemyVariant, ProjectileEntity, ParticleEntity, HazardEntity, PlayerEntity } from '../entities/types';
 import { Vec2 } from '../utils/math';
 import { Colors } from '../utils/constants';
 
@@ -13,9 +13,16 @@ export class DamageSystem implements System {
         player.shieldPopTimer -= dt;
     }
 
+    // Update Enemy Vulnerability Timers
+    const enemies = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
+    for (const e of enemies) {
+        if (e.vulnerableTimer && e.vulnerableTimer > 0) {
+            e.vulnerableTimer -= dt;
+        }
+    }
+
     // 1. Update Hazards (Damage & Lifetime)
     const hazards = state.entityManager.getByType(EntityType.Hazard) as HazardEntity[];
-    const enemies = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
 
     for (const hazard of hazards) {
         hazard.lifetime -= dt;
@@ -46,9 +53,7 @@ export class DamageSystem implements System {
                         enemy.health -= hazard.damage;
                         enemy.hitFlashTimer = 0.1;
                         if (enemy.health <= 0) {
-                            enemy.active = false;
-                            state.score += enemy.value;
-                            this.grantMetaRewards(state, enemy);
+                            this.handleEnemyDeath(state, enemy);
                         }
                     }
                 }
@@ -68,16 +73,27 @@ export class DamageSystem implements System {
                     if (hazard.tickTimer <= 0) {
                         // Hazard damage logic
                          if (player.currentShields > 0) {
-                             player.currentShields--;
-                             player.invulnerabilityTimer = 0.5;
-                             player.shieldPopTimer = 0.2; // Visual pop
+                             this.breakShield(state, player);
                          } else if (player.invulnerabilityTimer <= 0) {
-                             const damage = hazard.damage;
-                             const mitigation = player.damageReduction || 0;
-                             const actualDamage = Math.max(1, damage * (1 - mitigation));
                              
-                             player.health -= actualDamage;
-                             player.hitFlashTimer = 0.1;
+                             // DODGE CHECK
+                             if (this.attemptDodge(player)) {
+                                 // Dodged!
+                             } else {
+                                 const damage = hazard.damage;
+                                 let mitigation = player.damageReduction || 0;
+                                 
+                                 // FORTRESS: Stationary Mitigation
+                                 if (player.fortressTimer > 1.0) mitigation += 0.15; // +15% DR
+
+                                 const actualDamage = Math.max(1, damage * (1 - mitigation));
+                                 
+                                 player.health -= actualDamage;
+                                 player.hitFlashTimer = 0.1;
+                                 
+                                 // Reset Passive Regen
+                                 if (player.synergyDefenseTier >= 2) player.shieldRegenTimer = 10.0;
+                             }
                          }
                          hazard.tickTimer = 0.5; 
                     }
@@ -92,9 +108,64 @@ export class DamageSystem implements System {
 
       // Guard against already handled entities
       if (!projectile.active || !enemy.active) continue;
+      
+      // If piercing, check if we already hit this enemy
+      if (projectile.hitEntityIds.includes(enemy.id)) continue;
 
       // Apply Damage
       let damage = projectile.damage;
+
+      // SYNERGY: BULLET T3 - Ricochet Damage Bonus
+      if (projectile.isRicochet && player && player.synergyBulletTier >= 3) {
+          damage *= 1.5; // +50% Damage on ricochets
+      }
+
+      // SYNERGY: VULNERABILITY (Incoming Damage Amp)
+      if (enemy.vulnerableTimer && enemy.vulnerableTimer > 0) {
+          // Synergy T8: Doubled Effect
+          const mult = (player && player.synergyBulletTier >= 8) ? 1.6 : 1.3;
+          damage *= mult;
+      }
+      
+      // SYNERGY: BULLET T7 - Crit Damage
+      if (player && player.synergyBulletTier >= 7) {
+          // Flat damage increase simulation of "crit damage" or actual crit logic
+          // Simpler: Just +100% base damage boost for high tier synergy
+          damage *= 2.0;
+      }
+      
+      // Post Dash Buff
+      if (player && player.postDashTimer > 0) {
+          damage *= (1 + player.postDashDamageBuff);
+      }
+
+      // UPGRADE: CULLING / EXECUTIONER
+      if (player && player.cullingThreshold > 0) {
+          const hpPct = enemy.health / enemy.maxHealth;
+          if (hpPct <= player.cullingThreshold) {
+              if (player.cullingThreshold > 0.9) {
+                  // Executioner (Instakill non-boss)
+                  if (enemy.variant !== EnemyVariant.Boss) damage = 99999;
+              } else {
+                  damage *= 1.5; // Standard Culling bonus
+              }
+          }
+      }
+
+      // UPGRADE: FOCUS FIRE
+      if (player && player.focusFireStacks > 0) {
+          if (player.focusFireTarget === enemy.id) {
+              // Same target hit, apply accumulated bonus
+              // (Stored in temporary prop on entity or just calc based on stacks? Need per-projectile logic or player state?
+              // The upgrade definition says player.focusFireStacks = damage bonus per hit.
+              // We need to track consecutive hits count.
+              // For simplicity: ProjectileSystem doesn't track specific stacks on enemy.
+              // We will just add flat bonus if target matches last hit.
+              damage += player.focusFireStacks * 5; // Simplified: Big bonus for sticking to target
+          } else {
+              player.focusFireTarget = enemy.id; // Switch target
+          }
+      }
 
       // Tank Armor Logic: Tanks reduce incoming damage by 40%
       if (enemy.variant === EnemyVariant.Tank) {
@@ -103,17 +174,27 @@ export class DamageSystem implements System {
 
       enemy.health -= damage;
       enemy.hitFlashTimer = 0.1; 
+      projectile.hitEntityIds.push(enemy.id);
       
-      if (projectile.bouncesRemaining > 0) {
-          this.handleRicochet(state, projectile, enemy);
+      // SYNERGY: BULLET T2 - Apply Vulnerability
+      if (projectile.isVulnerabilityShot) {
+          enemy.vulnerableTimer = 3.0; // 3 Seconds
+          enemy.color = '#d946ef'; 
       }
 
-      projectile.active = false;
-
       if (enemy.health <= 0) {
-        enemy.active = false;
-        state.score += enemy.value;
-        this.grantMetaRewards(state, enemy);
+        this.handleEnemyDeath(state, enemy);
+      }
+
+      // Handle Destruction / Pierce / Ricochet
+      if (projectile.piercesRemaining > 0) {
+          projectile.piercesRemaining--;
+          // Do NOT destroy, do NOT ricochet yet (usually piercing overrides ricochet until done)
+      } else if (projectile.bouncesRemaining > 0) {
+          this.handleRicochet(state, projectile, enemy);
+          projectile.active = false; // "Converted" to particle/new proj logic in handleRicochet
+      } else {
+          projectile.active = false;
       }
     }
 
@@ -126,12 +207,21 @@ export class DamageSystem implements System {
       if (player.invulnerabilityTimer <= 0) {
         
         // --- SHIELD LOGIC ---
-        // Even though CollisionSystem handles physics, we handle the "Game Rules" of the hit here.
         if (player.currentShields > 0) {
-            player.currentShields--;
-            player.invulnerabilityTimer = 0.5; 
-            player.shieldPopTimer = 0.2; // TRIGGER POP VISUAL
+            this.breakShield(state, player);
             
+            // Retaliation: Thorns
+            if (player.thornsDamage > 0) {
+                enemy.health -= player.thornsDamage;
+                enemy.hitFlashTimer = 0.1;
+                if (enemy.health <= 0) this.handleEnemyDeath(state, enemy);
+            }
+            
+            // Reactive Pulse
+            if (player.reactivePulseOnHit) {
+                this.triggerReactivePulse(state, player);
+            }
+
             // Knockback Enemy
             const dx = enemy.position.x - player.position.x;
             const dy = enemy.position.y - player.position.y;
@@ -144,14 +234,39 @@ export class DamageSystem implements System {
             continue; // Damage negated
         }
 
+        // --- DODGE LOGIC ---
+        if (this.attemptDodge(player)) {
+            // Visual feedback?
+            continue;
+        }
+
         // HP Damage
         const rawDamage = enemy.damage;
-        const mitigation = player.damageReduction || 0;
+        let mitigation = player.damageReduction || 0;
+        
+        // FORTRESS
+        if (player.fortressTimer > 1.0) mitigation += 0.15; 
+
         const actualDamage = Math.max(1, rawDamage * (1 - mitigation));
 
         player.health -= actualDamage;
         player.invulnerabilityTimer = 0.35;
         player.hitFlashTimer = 0.2;
+        
+        // Reset Passive Regen
+        if (player.synergyDefenseTier >= 2) player.shieldRegenTimer = 10.0;
+
+        // Thorns
+        if (player.thornsDamage > 0) {
+            enemy.health -= player.thornsDamage;
+            enemy.hitFlashTimer = 0.1;
+            if (enemy.health <= 0) this.handleEnemyDeath(state, enemy);
+        }
+        
+        // Reactive Pulse
+        if (player.reactivePulseOnHit) {
+            this.triggerReactivePulse(state, player);
+        }
 
         // Bouncy Knockback Impulse
         const dx = enemy.position.x - player.position.x;
@@ -181,21 +296,37 @@ export class DamageSystem implements System {
         if (player.invulnerabilityTimer <= 0) {
             
             if (player.currentShields > 0) {
-                player.currentShields--;
-                player.invulnerabilityTimer = 0.5;
-                player.shieldPopTimer = 0.2; // TRIGGER POP VISUAL
+                this.breakShield(state, player);
                 projectile.active = false; 
+                
+                // Reactive Pulse
+                if (player.reactivePulseOnHit) this.triggerReactivePulse(state, player);
+                continue;
+            }
+
+            if (this.attemptDodge(player)) {
+                projectile.active = false; // Dodged bullets still disappear? Or pass through? Usually disappear visually.
                 continue;
             }
 
             const rawDamage = projectile.damage;
-            const mitigation = player.damageReduction || 0;
+            let mitigation = player.damageReduction || 0;
+            
+            // FORTRESS
+            if (player.fortressTimer > 1.0) mitigation += 0.15; 
+
             const actualDamage = Math.max(1, rawDamage * (1 - mitigation));
 
             player.health -= actualDamage;
             player.invulnerabilityTimer = 0.35;
             player.hitFlashTimer = 0.2;
             
+            // Reset Passive Regen
+            if (player.synergyDefenseTier >= 2) player.shieldRegenTimer = 10.0;
+            
+            // Reactive Pulse
+            if (player.reactivePulseOnHit) this.triggerReactivePulse(state, player);
+
             projectile.active = false;
 
             if (player.health <= 0) {
@@ -214,6 +345,87 @@ export class DamageSystem implements System {
     }
   }
 
+  private attemptDodge(player: PlayerEntity): boolean {
+      // Synergy T5/9/Upgrade: Dodge Chance
+      if (player.dodgeChance > 0) {
+          if (Math.random() < player.dodgeChance) {
+              // Dodged!
+              return true;
+          }
+      }
+      return false;
+  }
+
+  private triggerReactivePulse(state: GameState, player: PlayerEntity) {
+      // Reuse Repulse Logic but smaller/weaker or scaled
+      const PULSE_RADIUS = 200;
+      const enemies = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
+      
+      for (const enemy of enemies) {
+          const d = Vec2.dist(player.position, enemy.position);
+          if (d < PULSE_RADIUS) {
+              const dx = enemy.position.x - player.position.x;
+              const dy = enemy.position.y - player.position.y;
+              const mag = Math.sqrt(dx*dx + dy*dy);
+              if (mag > 0) {
+                  const force = 600 * (player.repulseForceMult || 1);
+                  enemy.knockback.x += (dx/mag) * force;
+                  enemy.knockback.y += (dy/mag) * force;
+                  
+                  // Damage?
+                  const dmg = 10 * (player.repulseDamageMult || 1);
+                  enemy.health -= dmg;
+                  enemy.hitFlashTimer = 0.1;
+                  if (enemy.health <= 0) this.handleEnemyDeath(state, enemy);
+              }
+          }
+      }
+  }
+
+  private breakShield(state: GameState, player: PlayerEntity) {
+      player.currentShields--;
+      player.invulnerabilityTimer = 0.5;
+      player.shieldPopTimer = 0.2; // TRIGGER POP VISUAL
+      
+      // SYNERGY: DEFENSE T2 - Reset passive regen on hit
+      if (player.synergyDefenseTier >= 2) {
+            player.shieldRegenTimer = 10.0;
+      }
+      
+      // SYNERGY: DEFENSE T1 - Shield break emits knockback pulse
+      if (player.synergyDefenseTier >= 1 && player.currentShields === 0) {
+          this.triggerReactivePulse(state, player);
+      }
+  }
+
+  private handleEnemyDeath(state: GameState, enemy: EnemyEntity) {
+      enemy.active = false;
+      state.score += enemy.value;
+      
+      // BOSS REWARDS
+      if (enemy.variant === EnemyVariant.Boss) {
+          state.score += 5000; // Big payout
+          state.runMetaCurrency += 200;
+          state.runMetaXP += 1000;
+      } else {
+          this.grantMetaRewards(state, enemy);
+      }
+      
+      // SYNERGY: DEFENSE T5 - Heal on Kill
+      if (state.player && state.player.synergyDefenseTier >= 5) {
+          state.player.health = Math.min(state.player.maxHealth, state.player.health + 2);
+      }
+
+      // UPGRADE: SIPHON
+      if (state.player && state.player.shieldSiphonChance > 0) {
+          if (state.player.currentShields < state.player.maxShields) {
+              if (Math.random() < state.player.shieldSiphonChance) {
+                  state.player.currentShields++;
+              }
+          }
+      }
+  }
+
   private grantMetaRewards(state: GameState, enemy: EnemyEntity) {
       // Base rewards
       let currency = 1;
@@ -228,9 +440,12 @@ export class DamageSystem implements System {
       } else if (enemy.variant === EnemyVariant.Shooter) {
           currency = 3;
           xp = 12;
-      } else if (enemy.variant === EnemyVariant.Boss) {
-          currency = 100;
-          xp = 500;
+      }
+
+      // GATE: No currency before Wave 10. Small XP drip for morale.
+      if (state.wave < 10) {
+          currency = 0;
+          xp = Math.ceil(xp * 0.2); // 20% XP drip
       }
 
       state.runMetaCurrency += currency;
@@ -300,13 +515,13 @@ export class DamageSystem implements System {
           state.entityManager.add(particle);
 
           if (closest.health <= 0) {
-              closest.active = false;
-              state.score += closest.value;
-              this.grantMetaRewards(state, closest);
+              this.handleEnemyDeath(state, closest);
           }
 
           hitIds.push(closest.id);
           currentSource = closest;
+          
+          // Next iteration
           bounces--;
       }
   }
