@@ -10,7 +10,8 @@ export enum GameStatus {
   GameOver = 'game_over',
   WaveIntro = 'wave_intro', // Countdown before wave starts
   Shop = 'shop', // Upgrade Shop (Opens between waves)
-  DevConsole = 'dev_console' // Developer Testing Console
+  DevConsole = 'dev_console', // Developer Testing Console
+  Extraction = 'extraction' // Post-Boss Risk/Reward Screen
 }
 
 export interface HitEvent {
@@ -63,6 +64,13 @@ export class GameState {
   difficultyMultiplier: number; // Multiplier for enemy stats based on wave
   isBossWave: boolean; // Flag to indicate if current wave is a boss encounter
   
+  // META PROGRESSION STATE
+  metaCurrency: number; // Persistent Total
+  metaXP: number;       // Persistent Total
+  runMetaCurrency: number; // Earned this run (At Risk)
+  runMetaXP: number;       // Earned this run (At Risk)
+  hasDefeatedFirstBoss: boolean; // Flag for death penalty logic
+  
   enemySpawnTimer: number;
   enemiesRemainingInWave: number; // Enemies left to spawn in current wave
   waveEnemyWeights: WaveWeights; // Probabilities for spawning enemy variants this wave
@@ -113,6 +121,14 @@ export class GameState {
         [EnemyVariant.Shooter]: 0,
         [EnemyVariant.Boss]: 0 
     };
+    
+    // Init Meta
+    this.metaCurrency = 0;
+    this.metaXP = 0;
+    this.runMetaCurrency = 0;
+    this.runMetaXP = 0;
+    this.hasDefeatedFirstBoss = false;
+
     this.areUpgradesExhausted = false;
     this.hitEvents = [];
     this.playerHitEvents = [];
@@ -124,6 +140,7 @@ export class GameState {
 
   /**
    * Resets the state for a new game session.
+   * NOTE: Does NOT reset persistent metaCurrency/metaXP.
    */
   reset() {
     this.entityManager.clear();
@@ -147,6 +164,12 @@ export class GameState {
         [EnemyVariant.Shooter]: 0,
         [EnemyVariant.Boss]: 0 
     };
+    
+    // Reset Run Meta
+    this.runMetaCurrency = 0;
+    this.runMetaXP = 0;
+    this.hasDefeatedFirstBoss = false;
+
     this.hitEvents = [];
     this.playerHitEvents = [];
     this.playerProjectileCollisionEvents = [];

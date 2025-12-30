@@ -8,6 +8,8 @@ import { WaveAnnouncement } from './UI/WaveAnnouncement';
 import { UpgradeShop } from './UI/UpgradeShop';
 import { DevConsole } from './UI/DevConsole';
 import { BossHealthBar } from './UI/BossHealthBar';
+import { ExtractionMenu } from './UI/ExtractionMenu';
+import { GameOver } from './UI/GameOver';
 import { Play } from 'lucide-react';
 import { GameStatus } from '../core/GameState';
 
@@ -26,6 +28,9 @@ export const GameContainer: React.FC = () => {
   const [playerHealth, setPlayerHealth] = useState({ current: 100, max: 100, shields: 0, maxShields: 0 });
   const [ammoState, setAmmoState] = useState({ current: 10, max: 10, isReloading: false });
   const [bossHealth, setBossHealth] = useState({ current: 0, max: 100, active: false });
+  
+  // Meta State for UI
+  const [runMeta, setRunMeta] = useState({ currency: 0, xp: 0 });
 
   useEffect(() => {
     // Subscribe to engine events
@@ -33,6 +38,12 @@ export const GameContainer: React.FC = () => {
     const handleStatusChange = (status: GameStatus) => {
         setGameState(status);
         
+        // Sync Meta on status change (e.g. hitting extraction)
+        setRunMeta({
+            currency: engine.state.runMetaCurrency,
+            xp: engine.state.runMetaXP
+        });
+
         // Refocus canvas when closing DevConsole
         if (status !== GameStatus.DevConsole && document.activeElement instanceof HTMLElement) {
             // If the focused element was the input or something else, blur it
@@ -137,6 +148,14 @@ export const GameContainer: React.FC = () => {
   const handleShopClose = () => {
       engine.closeShop();
   };
+  
+  const handleExtract = () => {
+      engine.extract();
+  };
+  
+  const handleContinueRun = () => {
+      engine.continueRun();
+  };
 
   const handleConsoleCommand = (cmd: string) => {
       const lowerCmd = cmd.toLowerCase();
@@ -163,7 +182,7 @@ export const GameContainer: React.FC = () => {
       <GameCanvas engine={engine} />
       
       {/* HUD Overlay */}
-      {(gameState === GameStatus.Playing || gameState === GameStatus.Paused || gameState === GameStatus.WaveIntro || gameState === GameStatus.Shop || gameState === GameStatus.DevConsole) && (
+      {(gameState === GameStatus.Playing || gameState === GameStatus.Paused || gameState === GameStatus.WaveIntro || gameState === GameStatus.Shop || gameState === GameStatus.DevConsole || gameState === GameStatus.Extraction) && (
         <>
           <HUD 
               score={score} 
@@ -188,6 +207,16 @@ export const GameContainer: React.FC = () => {
       {/* Wave Announcement & Countdown */}
       {gameState === GameStatus.WaveIntro && (
           <WaveAnnouncement wave={wave} countdown={waveCountdown} />
+      )}
+      
+      {/* Extraction Menu */}
+      {gameState === GameStatus.Extraction && (
+          <ExtractionMenu 
+              runCurrency={runMeta.currency} 
+              runXP={runMeta.xp} 
+              onExtract={handleExtract} 
+              onContinue={handleContinueRun} 
+          />
       )}
       
       {/* Upgrade Shop Overlay */}
@@ -229,25 +258,13 @@ export const GameContainer: React.FC = () => {
         </div>
       )}
       
-        {gameState === GameStatus.GameOver && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 rounded-lg backdrop-blur-sm z-50">
-          <h2 className="text-4xl font-bold text-red-500 mb-4">GAME OVER</h2>
-          <p className="text-slate-300 mb-8 text-xl">Final Score: <span className="text-white font-mono">{score}</span></p>
-          <div className="flex gap-4">
-              <button
-              onClick={handleQuit}
-              className="px-6 py-3 bg-slate-800 text-slate-300 rounded-full font-bold hover:bg-slate-700 transition-colors"
-              >
-              MAIN MENU
-              </button>
-              <button
-              onClick={handleStart}
-              className="px-6 py-3 bg-white text-slate-900 rounded-full font-bold hover:bg-slate-200 transition-colors"
-              >
-              TRY AGAIN
-              </button>
-          </div>
-        </div>
+      {gameState === GameStatus.GameOver && (
+        <GameOver 
+            score={score} 
+            state={engine.state}
+            onRestart={handleStart} 
+            onQuit={handleQuit} 
+        />
       )}
     </div>
   );

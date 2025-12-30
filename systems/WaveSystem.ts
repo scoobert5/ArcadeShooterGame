@@ -31,6 +31,10 @@ export class WaveSystem implements System {
             if (state.player.maxShields > 0) {
                 state.player.currentShields = state.player.maxShields;
             }
+
+            // --- Meta Rewards for Clearing Wave ---
+            state.runMetaCurrency += 10;
+            state.runMetaXP += 50;
         }
       }
     } 

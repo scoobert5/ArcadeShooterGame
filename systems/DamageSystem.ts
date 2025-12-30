@@ -48,6 +48,7 @@ export class DamageSystem implements System {
                         if (enemy.health <= 0) {
                             enemy.active = false;
                             state.score += enemy.value;
+                            this.grantMetaRewards(state, enemy);
                         }
                     }
                 }
@@ -112,6 +113,7 @@ export class DamageSystem implements System {
       if (enemy.health <= 0) {
         enemy.active = false;
         state.score += enemy.value;
+        this.grantMetaRewards(state, enemy);
       }
     }
 
@@ -212,6 +214,29 @@ export class DamageSystem implements System {
     }
   }
 
+  private grantMetaRewards(state: GameState, enemy: EnemyEntity) {
+      // Base rewards
+      let currency = 1;
+      let xp = 5;
+
+      if (enemy.variant === EnemyVariant.Fast) {
+          currency = 2;
+          xp = 8;
+      } else if (enemy.variant === EnemyVariant.Tank) {
+          currency = 3;
+          xp = 15;
+      } else if (enemy.variant === EnemyVariant.Shooter) {
+          currency = 3;
+          xp = 12;
+      } else if (enemy.variant === EnemyVariant.Boss) {
+          currency = 100;
+          xp = 500;
+      }
+
+      state.runMetaCurrency += currency;
+      state.runMetaXP += xp;
+  }
+
   private handleRicochet(state: GameState, projectile: ProjectileEntity, hitEnemy: EnemyEntity) {
       let currentSource = hitEnemy;
       let currentDamage = projectile.damage;
@@ -277,6 +302,7 @@ export class DamageSystem implements System {
           if (closest.health <= 0) {
               closest.active = false;
               state.score += closest.value;
+              this.grantMetaRewards(state, closest);
           }
 
           hitIds.push(closest.id);

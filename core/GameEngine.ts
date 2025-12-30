@@ -5,6 +5,7 @@ import { System } from '../systems/BaseSystem';
 import { PlayerEntity, EntityType, EnemyVariant, EnemyEntity } from '../entities/types';
 import { Colors } from '../utils/constants';
 import { BALANCE } from '../config/balance';
+import { Persistence } from '../utils/persistence';
 
 // Import Systems (Order Matters)
 import { PlayerSystem } from '../systems/PlayerSystem';
@@ -46,6 +47,11 @@ export class GameEngine {
     this.state = new GameState();
     this.inputManager = new InputManager();
     this.listeners = new Map();
+    
+    // LOAD META PROGRESSION
+    const metaData = Persistence.load();
+    this.state.metaCurrency = metaData.metaCurrency;
+    this.state.metaXP = metaData.metaXP;
     
     this.upgradeSystem = new UpgradeSystem();
     this.waveSystem = new WaveSystem();
@@ -247,7 +253,8 @@ export class GameEngine {
         this.state.status === GameStatus.Playing || 
         this.state.status === GameStatus.WaveIntro || 
         this.state.status === GameStatus.Paused || 
-        this.state.status === GameStatus.Shop
+        this.state.status === GameStatus.Shop ||
+        this.state.status === GameStatus.Extraction
     ) {
         this.state.previousStatus = this.state.status;
         this.state.status = GameStatus.DevConsole;
@@ -313,6 +320,45 @@ export class GameEngine {
       if (this.state.status !== GameStatus.Shop) return;
       
       this.startWaveIntro();
+      this.inputManager.reset();
+  }
+
+  /**
+   * Extraction Logic: Bank 100% and Quit
+   */
+  extract() {
+      if (this.state.status !== GameStatus.Extraction) return;
+
+      // Bank 100%
+      this.state.metaCurrency += this.state.runMetaCurrency;
+      this.state.metaXP += this.state.runMetaXP;
+      
+      // Save
+      Persistence.save({
+          metaCurrency: this.state.metaCurrency,
+          metaXP: this.state.metaXP
+      });
+
+      // Quit
+      this.quitGame();
+  }
+
+  /**
+   * Extraction Logic: Continue (Risk)
+   */
+  continueRun() {
+      if (this.state.status !== GameStatus.Extraction) return;
+
+      // Mark boss as defeated for future checkpoints
+      this.state.hasDefeatedFirstBoss = true;
+
+      // Prepare Next Wave (Logic skipped in update loop to hold state)
+      this.waveSystem.prepareNextWave(this.state);
+      
+      // Proceed to Shop
+      this.state.status = GameStatus.Shop;
+      this.emit('status_change', this.state.status);
+      this.emit('wave_change', this.state.wave);
       this.inputManager.reset();
   }
 
@@ -433,9 +479,26 @@ export class GameEngine {
     // 5. Maintenance (Cleanup dead entities)
     this.state.entityManager.cleanup();
 
-    // 6. Game Over Check
+    // 6. Game Over Check (Death)
     if (!this.state.isPlayerAlive) {
       this.state.status = GameStatus.GameOver;
+      
+      // DEATH PENALTY LOGIC
+      if (this.state.hasDefeatedFirstBoss) {
+          // Keep 25%
+          this.state.metaCurrency += Math.floor(this.state.runMetaCurrency * 0.25);
+          this.state.metaXP += Math.floor(this.state.runMetaXP * 0.25);
+      } else {
+          // Keep 0%
+          // (Designer choice: minimal or 0. Sticking to 0 for simplicity/punishment)
+      }
+      
+      // Save Persistent Progress
+      Persistence.save({
+          metaCurrency: this.state.metaCurrency,
+          metaXP: this.state.metaXP
+      });
+
       this.loop.stop();
       this.emit('game_over');
       this.emit('status_change', GameStatus.GameOver);
@@ -450,18 +513,27 @@ export class GameEngine {
         this.state.entityManager.removeByType(EntityType.Projectile);
         this.state.entityManager.removeByType(EntityType.Hazard);
 
-        // 2. Prepare Next Wave Data (Increments wave counter)
-        this.waveSystem.prepareNextWave(this.state);
-        
-        // 3. Open Shop Automatically
-        this.state.status = GameStatus.Shop;
-        this.state.waveCleared = false; // Reset flag
-        
-        this.emit('status_change', this.state.status);
-        this.emit('wave_change', this.state.wave);
-        this.inputManager.reset();
-        
-        return; 
+        const wasBossWave = this.state.isBossWave; // Capture state before next wave prep
+
+        if (wasBossWave) {
+            // TRIGGER EXTRACTION
+            this.state.status = GameStatus.Extraction;
+            this.state.waveCleared = false;
+            
+            this.emit('status_change', this.state.status);
+            this.inputManager.reset();
+            return;
+        } else {
+            // NORMAL FLOW
+            this.waveSystem.prepareNextWave(this.state);
+            this.state.status = GameStatus.Shop;
+            this.state.waveCleared = false; // Reset flag
+            
+            this.emit('status_change', this.state.status);
+            this.emit('wave_change', this.state.wave);
+            this.inputManager.reset();
+            return; 
+        }
     }
 
     // 8. Reactivity & Events
