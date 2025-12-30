@@ -33,7 +33,8 @@ export class GameRenderer {
         state.status === GameStatus.Shop || 
         state.status === GameStatus.GameOver || 
         state.status === GameStatus.WaveIntro ||
-        state.status === GameStatus.Extraction) { // Added Extraction
+        state.status === GameStatus.Extraction ||
+        state.status === GameStatus.ExtractionSuccess) { // Added ExtractionSuccess
         
         this.drawAbstractBackground();
         return;

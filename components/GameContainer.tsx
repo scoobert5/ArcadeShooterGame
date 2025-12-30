@@ -9,6 +9,7 @@ import { UpgradeShop } from './UI/UpgradeShop';
 import { DevConsole } from './UI/DevConsole';
 import { BossHealthBar } from './UI/BossHealthBar';
 import { ExtractionMenu } from './UI/ExtractionMenu';
+import { ExtractionSuccess } from './UI/ExtractionSuccess';
 import { GameOver } from './UI/GameOver';
 import { Play } from 'lucide-react';
 import { GameStatus } from '../core/GameState';
@@ -153,6 +154,10 @@ export const GameContainer: React.FC = () => {
       engine.extract();
   };
   
+  const handleCompleteExtraction = () => {
+      engine.completeExtraction();
+  };
+  
   const handleContinueRun = () => {
       engine.continueRun();
   };
@@ -182,7 +187,7 @@ export const GameContainer: React.FC = () => {
       <GameCanvas engine={engine} />
       
       {/* HUD Overlay */}
-      {(gameState === GameStatus.Playing || gameState === GameStatus.Paused || gameState === GameStatus.WaveIntro || gameState === GameStatus.Shop || gameState === GameStatus.DevConsole || gameState === GameStatus.Extraction) && (
+      {(gameState === GameStatus.Playing || gameState === GameStatus.Paused || gameState === GameStatus.WaveIntro || gameState === GameStatus.Shop || gameState === GameStatus.DevConsole || gameState === GameStatus.Extraction || gameState === GameStatus.ExtractionSuccess) && (
         <>
           <HUD 
               score={score} 
@@ -216,6 +221,15 @@ export const GameContainer: React.FC = () => {
               runXP={runMeta.xp} 
               onExtract={handleExtract} 
               onContinue={handleContinueRun} 
+          />
+      )}
+
+      {/* Extraction Success Confirmation */}
+      {gameState === GameStatus.ExtractionSuccess && (
+          <ExtractionSuccess 
+              runCurrency={runMeta.currency} 
+              runXP={runMeta.xp} 
+              onContinue={handleCompleteExtraction} 
           />
       )}
       

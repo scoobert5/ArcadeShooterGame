@@ -11,7 +11,8 @@ export enum GameStatus {
   WaveIntro = 'wave_intro', // Countdown before wave starts
   Shop = 'shop', // Upgrade Shop (Opens between waves)
   DevConsole = 'dev_console', // Developer Testing Console
-  Extraction = 'extraction' // Post-Boss Risk/Reward Screen
+  Extraction = 'extraction', // Post-Boss Risk/Reward Screen
+  ExtractionSuccess = 'extraction_success' // Confirmation screen after extracting
 }
 
 export interface HitEvent {

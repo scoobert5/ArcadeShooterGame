@@ -10,8 +10,10 @@ interface GameOverProps {
 }
 
 export const GameOver: React.FC<GameOverProps> = ({ score, state, onRestart, onQuit }) => {
-  const retainedCurrency = state.hasDefeatedFirstBoss ? Math.floor(state.runMetaCurrency * 0.25) : 0;
-  const retainedXP = state.hasDefeatedFirstBoss ? Math.floor(state.runMetaXP * 0.25) : 0;
+  // Logic: 25% if boss killed, 15% if not (Early Exit)
+  const retentionRate = state.hasDefeatedFirstBoss ? 0.25 : 0.15;
+  const retainedCurrency = Math.floor(state.runMetaCurrency * retentionRate);
+  const retainedXP = Math.floor(state.runMetaXP * retentionRate);
   const lostCurrency = state.runMetaCurrency - retainedCurrency;
   
   return (
@@ -57,11 +59,22 @@ export const GameOver: React.FC<GameOverProps> = ({ score, state, onRestart, onQ
                   </div>
               </div>
 
+              {/* Contextual Warning */}
               {!state.hasDefeatedFirstBoss && (
+                  <div className="mt-4 bg-orange-950/30 border border-orange-900/50 rounded p-3 flex items-start gap-2">
+                      <AlertTriangle className="text-orange-500 w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <p className="text-orange-400 text-xs leading-relaxed">
+                          <strong>Early Exit — Partial Progress Retained</strong><br/>
+                          Emergency beacon activated. {Math.round(retentionRate * 100)}% partial asset recovery authorized. Defeat the first Boss to increase retention to 25%.
+                      </p>
+                  </div>
+              )}
+              
+              {state.hasDefeatedFirstBoss && (
                   <div className="mt-4 bg-red-950/30 border border-red-900/50 rounded p-3 flex items-start gap-2">
                       <AlertTriangle className="text-red-500 w-4 h-4 mt-0.5 flex-shrink-0" />
                       <p className="text-red-400 text-xs leading-relaxed">
-                          Extraction protocols failed. Reach the first Boss checkpoint to enable emergency 25% asset retention.
+                          <strong>Checkpoint Reached:</strong> 25% asset retention authorized. Extract safely at checkpoints to secure 100% of gains.
                       </p>
                   </div>
               )}

@@ -324,7 +324,7 @@ export class GameEngine {
   }
 
   /**
-   * Extraction Logic: Bank 100% and Quit
+   * Extraction Logic: Bank 100% and Show Success Screen
    */
   extract() {
       if (this.state.status !== GameStatus.Extraction) return;
@@ -339,7 +339,17 @@ export class GameEngine {
           metaXP: this.state.metaXP
       });
 
-      // Quit
+      // Transition to Success Screen
+      this.state.status = GameStatus.ExtractionSuccess;
+      this.inputManager.reset(); // CRITICAL: Reset inputs before screen switch
+      this.emit('status_change', this.state.status);
+  }
+
+  /**
+   * Called from Extraction Success screen to return to menu
+   */
+  completeExtraction() {
+      if (this.state.status !== GameStatus.ExtractionSuccess) return;
       this.quitGame();
   }
 
@@ -386,6 +396,9 @@ export class GameEngine {
       this.state.waveIntroTimer = 3.0;
       this.state.waveActive = false; // Wave System should not check clear condition
       
+      // CRITICAL: Reset inputs on start of any wave (including boss intro)
+      this.inputManager.reset(); 
+
       // Auto-Fill Ammo Loop Fix
       if (this.state.player) {
           this.state.player.currentAmmo = this.state.player.maxAmmo;
@@ -482,15 +495,17 @@ export class GameEngine {
     // 6. Game Over Check (Death)
     if (!this.state.isPlayerAlive) {
       this.state.status = GameStatus.GameOver;
+      this.inputManager.reset(); // CRITICAL: Reset inputs on death
       
       // DEATH PENALTY LOGIC
       if (this.state.hasDefeatedFirstBoss) {
-          // Keep 25%
+          // Post-Boss: Keep 25%
           this.state.metaCurrency += Math.floor(this.state.runMetaCurrency * 0.25);
           this.state.metaXP += Math.floor(this.state.runMetaXP * 0.25);
       } else {
-          // Keep 0%
-          // (Designer choice: minimal or 0. Sticking to 0 for simplicity/punishment)
+          // Early Death (Waves 1-9): Keep 15%
+          this.state.metaCurrency += Math.floor(this.state.runMetaCurrency * 0.15);
+          this.state.metaXP += Math.floor(this.state.runMetaXP * 0.15);
       }
       
       // Save Persistent Progress
@@ -521,7 +536,7 @@ export class GameEngine {
             this.state.waveCleared = false;
             
             this.emit('status_change', this.state.status);
-            this.inputManager.reset();
+            this.inputManager.reset(); // CRITICAL: Reset inputs on extraction UI
             return;
         } else {
             // NORMAL FLOW
@@ -531,7 +546,7 @@ export class GameEngine {
             
             this.emit('status_change', this.state.status);
             this.emit('wave_change', this.state.wave);
-            this.inputManager.reset();
+            this.inputManager.reset(); // CRITICAL: Reset inputs on shop open
             return; 
         }
     }

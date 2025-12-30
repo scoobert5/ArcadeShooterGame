@@ -72,6 +72,8 @@ export class InputManager {
   };
 
   private handleKeyDown = (e: KeyboardEvent) => {
+    if (e.repeat) return; // Ignore auto-repeat to ensure fresh inputs after resets
+
     switch (e.code) {
       case 'KeyW': case 'ArrowUp': this.state.up = true; break;
       case 'KeyS': case 'ArrowDown': this.state.down = true; break;
