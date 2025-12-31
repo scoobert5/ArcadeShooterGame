@@ -71,7 +71,7 @@ export const SYNERGY_LEVELS: Record<UpgradeFamily, SynergyMilestone[]> = {
 };
 
 export const CHAINS: UpgradeChain[] = [
-  // --- BULLETS ---
+  // --- BULLETS FAMILY ---
   {
     id: 'focus_fire',
     baseName: 'Focus Fire',
@@ -183,7 +183,7 @@ export const CHAINS: UpgradeChain[] = [
     ]
   },
 
-  // --- DEFENSE ---
+  // --- DEFENSE FAMILY ---
   {
     id: 'siphon',
     baseName: 'Energy Siphon',
@@ -200,10 +200,32 @@ export const CHAINS: UpgradeChain[] = [
     baseName: 'Fortress Protocol',
     family: 'DEFENSE',
     tiers: [
-      { suffix: 'Unlock', description: 'Stand still to gain armor.', rarity: UpgradeRarity.Common, apply: (p) => { /* logic */ } },
+      { suffix: 'Unlock', description: 'Stand still for 1s to gain armor.', rarity: UpgradeRarity.Common, apply: (p) => { /* logic in system */ } },
       { suffix: 'II', description: 'Stationary armor +10%.', rarity: UpgradeRarity.Rare, apply: (p) => { /* logic */ } },
       { suffix: 'III', description: 'Stationary regens ammo.', rarity: UpgradeRarity.Epic, apply: (p) => { /* logic */ } },
       { suffix: 'Bunker', description: 'Stationary firing is 2x faster.', rarity: UpgradeRarity.Legendary, apply: (p) => { /* logic */ } }
+    ]
+  },
+  {
+    id: 'emergency_protocol',
+    baseName: 'Emergency Protocol',
+    family: 'DEFENSE',
+    tiers: [
+      { suffix: 'I', description: 'Invulnerability after hit +0.5s.', rarity: UpgradeRarity.Common, apply: (p) => { /* logic in DamageSystem */ } },
+      { suffix: 'II', description: 'Invulnerability after hit +1.0s.', rarity: UpgradeRarity.Rare, apply: (p) => { /* logic */ } },
+      { suffix: 'III', description: 'Speed +50% while invulnerable.', rarity: UpgradeRarity.Epic, apply: (p) => { /* logic */ } },
+      { suffix: 'Phase Shift', description: 'Taking damage triggers a free pulse.', rarity: UpgradeRarity.Legendary, apply: (p) => p.reactivePulseOnHit = true }
+    ]
+  },
+  {
+    id: 'titan_heart',
+    baseName: 'Titan Heart',
+    family: 'DEFENSE',
+    tiers: [
+      { suffix: 'I', description: 'Max HP +50, Speed -5%.', rarity: UpgradeRarity.Rare, apply: (p) => { p.maxHealth += 50; p.health += 50; p.speed *= 0.95; } },
+      { suffix: 'II', description: 'Max HP +100, Speed -5%.', rarity: UpgradeRarity.Epic, apply: (p) => { p.maxHealth += 100; p.health += 100; p.speed *= 0.95; } },
+      { suffix: 'III', description: 'Max HP +150, Speed -5%.', rarity: UpgradeRarity.Epic, apply: (p) => { p.maxHealth += 150; p.health += 150; p.speed *= 0.95; } },
+      { suffix: 'Colossus', description: 'Max HP +500. Cannot be knocked back.', rarity: UpgradeRarity.Legendary, apply: (p) => { p.maxHealth += 500; p.health += 500; } }
     ]
   },
   {
@@ -284,7 +306,7 @@ export const CHAINS: UpgradeChain[] = [
     ]
   },
 
-  // --- MOBILITY ---
+  // --- MOBILITY FAMILY ---
   {
     id: 'afterburner',
     baseName: 'Afterburner',
@@ -316,6 +338,39 @@ export const CHAINS: UpgradeChain[] = [
       { suffix: 'II', description: 'Base speed +10%.', rarity: UpgradeRarity.Epic, apply: (p) => p.speed *= 1.1 },
       { suffix: 'III', description: 'Max fire rate cap increased.', rarity: UpgradeRarity.Epic, apply: (p) => { /* Logic */ } },
       { suffix: 'Adrenaline', description: 'Kills boost speed for 2s.', rarity: UpgradeRarity.Legendary, apply: (p) => { /* Logic */ } }
+    ]
+  },
+  {
+    id: 'aerodynamics',
+    baseName: 'Aerodynamics',
+    family: 'MOBILITY',
+    tiers: [
+      { suffix: 'I', description: 'Dash cooldown -0.5s.', rarity: UpgradeRarity.Common, apply: (p) => p.maxDashCooldown -= 0.5 },
+      { suffix: 'II', description: 'Dash distance +20%.', rarity: UpgradeRarity.Rare, apply: (p) => p.dashDuration *= 1.2 },
+      { suffix: 'III', description: 'Dash grants brief speed boost.', rarity: UpgradeRarity.Epic, apply: (p) => { /* Logic */ } },
+      { suffix: 'Tailwind', description: 'Kills instantly refresh Dash.', rarity: UpgradeRarity.Legendary, apply: (p) => { /* Logic */ } }
+    ]
+  },
+  {
+    id: 'skirmisher',
+    baseName: 'Skirmisher',
+    family: 'MOBILITY',
+    tiers: [
+      { suffix: 'I', description: 'Move 10% faster while firing.', rarity: UpgradeRarity.Common, apply: (p) => { /* Logic */ } },
+      { suffix: 'II', description: 'Damage +10% while moving.', rarity: UpgradeRarity.Rare, apply: (p) => p.momentumDamageMult += 0.1 },
+      { suffix: 'III', description: 'Damage +20% while moving.', rarity: UpgradeRarity.Epic, apply: (p) => p.momentumDamageMult += 0.2 },
+      { suffix: 'Blitzkrieg', description: 'Firing no longer slows you down.', rarity: UpgradeRarity.Legendary, apply: (p) => { /* Logic */ } }
+    ]
+  },
+  {
+    id: 'phasing',
+    baseName: 'Phasing',
+    family: 'MOBILITY',
+    tiers: [
+      { suffix: 'I', description: 'Dash makes you ethereal (50% DR).', rarity: UpgradeRarity.Rare, apply: (p) => { /* Logic */ } },
+      { suffix: 'II', description: 'Dash makes you ethereal (80% DR).', rarity: UpgradeRarity.Epic, apply: (p) => { /* Logic */ } },
+      { suffix: 'III', description: 'Dash lasts 50% longer.', rarity: UpgradeRarity.Epic, apply: (p) => p.dashDuration *= 1.5 },
+      { suffix: 'Ghost', description: 'Pass through enemies while dashing.', rarity: UpgradeRarity.Legendary, apply: (p) => { /* Logic */ } }
     ]
   },
   {
