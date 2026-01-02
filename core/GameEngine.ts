@@ -2,10 +2,11 @@ import { GameState, GameStatus } from './GameState';
 import { Loop } from './Loop';
 import { InputManager } from './InputManager';
 import { System } from '../systems/BaseSystem';
-import { PlayerEntity, EntityType, EnemyVariant, EnemyEntity } from '../entities/types';
+import { PlayerEntity, EntityType, EnemyVariant, EnemyEntity, HazardEntity } from '../entities/types';
 import { Colors } from '../utils/constants';
 import { BALANCE } from '../config/balance';
 import { Persistence } from '../utils/persistence';
+import { Vec2 } from '../utils/math';
 
 // Import Systems (Order Matters)
 import { PlayerSystem } from '../systems/PlayerSystem';
@@ -16,67 +17,67 @@ import { DamageSystem } from '../systems/DamageSystem';
 import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { WaveSystem } from '../systems/WaveSystem';
+import { MetaProgressionSystem } from '../systems/MetaProgressionSystem';
 
 type GameEventType = 'score_change' | 'game_over' | 'wave_change' | 'wave_progress' | 'player_health_change' | 'enemy_hit' | 'status_change' | 'wave_intro_timer' | 'boss_health_change';
 type GameEventListener = (data?: any) => void;
 
-/**
- * GameEngine
- * - Owns GameState (Source of Truth)
- * - Owns Systems (Rules)
- * - Owns Loop (Time)
- * - Manages interactions between React UI and Game Logic via specific methods/events.
- */
 export class GameEngine {
   public state: GameState;
   public inputManager: InputManager;
   
   private loop: Loop;
   private systems: System[];
-  // Keep explicit references to special systems for direct calls
   private upgradeSystem: UpgradeSystem;
   private waveSystem: WaveSystem;
+  private metaProgressionSystem: MetaProgressionSystem;
   private listeners: Map<GameEventType, Set<GameEventListener>>;
   
   private lastPlayerHealth: number = 100;
   private wasEscapePressed: boolean = false;
   private lastEnemiesRemaining: number = -1;
   private lastBossHealth: number = -1;
+  
+  // Trackers for hooks
+  private previousDashState: boolean = false;
+  private hazardContactCooldown: number = 0;
 
   constructor() {
     this.state = new GameState();
     this.inputManager = new InputManager();
     this.listeners = new Map();
+    this.metaProgressionSystem = new MetaProgressionSystem();
     
     // LOAD META PROGRESSION
     const metaData = Persistence.load();
     this.state.metaCurrency = metaData.metaCurrency;
     this.state.metaXP = metaData.metaXP;
+    this.state.metaState.currency = metaData.metaCurrency;
+    this.state.metaState.xp = metaData.metaXP;
+    
+    const { level } = this.metaProgressionSystem.getLevelFromXP(this.state.metaState.xp);
+    this.state.metaState.level = level;
+
+    if (metaData.equippedStartingPerk !== undefined) {
+        this.state.metaState.equippedStartingPerk = metaData.equippedStartingPerk;
+    }
     
     this.upgradeSystem = new UpgradeSystem();
     this.waveSystem = new WaveSystem();
 
-    // 1. Define the Fixed System Pipeline
-    // Systems are executed sequentially every frame.
-    // They do NOT communicate with each other directly.
     this.systems = [
-      new PlayerSystem(),      // Input -> Velocity / Actions
-      this.waveSystem,         // Wave Progression (Sets limits for EnemySystem, flags waveCleared)
-      new ProjectileSystem(),  // Physics (Velocity -> Position)
-      new EnemySystem(),       // AI Behavior & Spawning
-      new CollisionSystem(),   // Interaction (Overlap detection & resolution)
-      new DamageSystem(),      // Logic (Health calculations, Death)
-      this.upgradeSystem,      // Logic (Apply pending upgrades)
-      new ProgressionSystem()  // Rules (Win/Loss conditions)
+      new PlayerSystem(),      
+      this.waveSystem,         
+      new ProjectileSystem(),  
+      new EnemySystem(),       
+      new CollisionSystem(),   
+      new DamageSystem(),      
+      this.upgradeSystem,      
+      new ProgressionSystem()  
     ];
 
-    // 2. Initialize Loop with the update callback
     this.loop = new Loop(this.update.bind(this));
   }
-
-  /**
-   * --- Lifecycle Methods ---
-   */
 
   init(inputElement: HTMLElement) {
     this.inputManager.attach(inputElement);
@@ -91,8 +92,6 @@ export class GameEngine {
   resize(width: number, height: number) {
       this.state.worldWidth = width;
       this.state.worldHeight = height;
-      
-      // If player is out of bounds after resize, clamp them
       if (this.state.player) {
           const p = this.state.player;
           p.position.x = Math.max(p.radius, Math.min(width - p.radius, p.position.x));
@@ -100,17 +99,12 @@ export class GameEngine {
       }
   }
 
-  /**
-   * Main Entry Point for a new session.
-   */
   startGame() {
     this.resetRunState();
     this.createDefaultPlayer();
     this.initLevel();
-    
     this.loop.start();
     
-    // Initial Emit
     if (this.state.player) {
         this.emit('score_change', this.state.score);
         this.emit('player_health_change', { 
@@ -124,52 +118,43 @@ export class GameEngine {
 
   private resetRunState() {
     this.state.reset();
-    this.inputManager.resetAll(); // Explicit full reset
+    this.inputManager.resetAll();
     this.lastEnemiesRemaining = -1;
     this.lastPlayerHealth = BALANCE.PLAYER.BASE_HP;
     this.lastBossHealth = -1;
+    this.previousDashState = false;
+    this.hazardContactCooldown = 0;
   }
 
   private createDefaultPlayer() {
-    // Spawn Player with Base Stats from Config
     const player: PlayerEntity = {
       id: 'player',
       type: EntityType.Player,
       position: { x: this.state.worldWidth / 2, y: this.state.worldHeight / 2 },
       velocity: { x: 0, y: 0 },
-      radius: 16, // Physics constant kept inline
+      radius: 16,
       rotation: 0,
       color: Colors.Player,
       active: true,
-      
       health: BALANCE.PLAYER.BASE_HP,
       maxHealth: BALANCE.PLAYER.BASE_HP,
-      
       cooldown: 0,
       weaponLevel: 1,
       wantsToFire: false,
       invulnerabilityTimer: 0,
       hitFlashTimer: 0,
-      
-      // Ammo & Reload
       currentAmmo: BALANCE.PLAYER.BASE_AMMO,
       maxAmmo: BALANCE.PLAYER.BASE_AMMO,
       isReloading: false,
       reloadTimer: 0,
       maxReloadTime: BALANCE.PLAYER.RELOAD_TIME,
-
-      // Ability Stats
       repulseCooldown: 0,
       maxRepulseCooldown: BALANCE.PLAYER.REPULSE_COOLDOWN,
       repulseVisualTimer: 0,
-      
-      // Ability Scaling
       repulseForceMult: 1.0,
       repulseDamage: BALANCE.PLAYER.REPULSE_DAMAGE,
       repulseDamageMult: 1.0,
-
-      // Dash Ability
-      dashUnlocked: false, // Default Locked
+      dashUnlocked: false,
       dashCooldown: 0,
       maxDashCooldown: BALANCE.PLAYER.DASH_COOLDOWN,
       dashCharges: 0,
@@ -178,57 +163,40 @@ export class GameEngine {
       dashDuration: BALANCE.PLAYER.DASH_DURATION,
       dashTimer: 0,
       dashTrailTimer: 0,
-      dashTrailDuration: 3.0, // Base duration set to 3s per requirements
+      dashTrailDuration: 3.0,
       dashTrailDamage: BALANCE.PLAYER.DASH_TRAIL_DAMAGE,
       dashFatigue: 0,
-      activeDashTrailId: undefined,
-
-      // Shield Ability
       currentShields: 0,
-      maxShields: 0, // 0 = Locked
+      maxShields: 0,
       shieldHitAnimTimer: 0,
       shieldPopTimer: 0,
-
-      // SYNERGY STATE
       synergyBulletTier: 0,
       synergyMobilityTier: 0,
       synergyDefenseTier: 0,
       shotsFired: 0,
       shieldRegenTimer: 0,
-
-      // Initial Upgradable Stats
-      speed: BALANCE.PLAYER.BASE_SPEED,
-      speedMultiplier: 1.0,
-      fireRate: BALANCE.PLAYER.BASE_FIRE_RATE,
-      damage: BALANCE.PLAYER.BASE_DAMAGE,
-      
-      // New Offensive Stats
       projectileCount: 1,
       projectileStreams: 1,
       splitAngle: 0.3,
       ricochetBounces: 0,
       ricochetSearchRadius: BALANCE.PLAYER.BASE_RICOCHET_RADIUS,
       piercingCount: 0,
-      
-      // Burst
       burstQueue: 0,
       burstTimer: 0,
-
-      // Defensive Stats
+      speed: BALANCE.PLAYER.BASE_SPEED,
+      speedMultiplier: 1.0,
+      fireRate: BALANCE.PLAYER.BASE_FIRE_RATE,
+      damage: BALANCE.PLAYER.BASE_DAMAGE,
       damageReduction: 0,
       waveHealRatio: BALANCE.WAVE.HEAL_RATIO,
       thornsDamage: 0,
       dodgeChance: 0,
       reactivePulseOnHit: false,
-
-      // Mobility Mechanics
       dashReloadAmount: 0,
       momentumDamageMult: 0,
       moveSpeedShieldRegen: false,
       postDashDamageBuff: 0,
       postDashTimer: 0,
-
-      // NEW EXPANDED MECHANICS
       focusFireStacks: 0,
       cullingThreshold: 0,
       shieldSiphonChance: 0,
@@ -236,53 +204,73 @@ export class GameEngine {
       staticCharge: 0,
       afterburnerEnabled: false,
       nitroEnabled: false,
-
-      // IDENTITY TRADE-OFFS
       ricochetEnabled: true,
       shieldsDisabled: false,
       dashInvulnerable: false,
-      fireRateMultMoving: 1.0
+      fireRateMultMoving: 1.0,
+
+      // Perk Flags
+      dashPrimePerWave: false,
+      dashPrimeUsedThisWave: false,
+      autoReloadPerk: false,
+      fieldPatchPerk: false
     };
     
+    // META PERK INIT
+    this.metaProgressionSystem.onRunStart(this.state, player);
+
     this.state.entityManager.add(player);
     this.state.player = player;
   }
 
   private initLevel() {
-      // Initialize Wave 1 via WaveSystem to ensure consistent budget/weight logic
-      // We set wave to 0 so prepareNextWave increments it to 1
       this.state.wave = 0;
       this.waveSystem.prepareNextWave(this.state);
-      
-      // Start with Intro
       this.startWaveIntro();
   }
 
+  enterMetaHub() {
+      if (this.state.status === GameStatus.Menu) {
+          this.state.status = GameStatus.MetaHub;
+          this.emit('status_change', this.state.status);
+      }
+  }
+
+  exitMetaHub() {
+      if (this.state.status === GameStatus.MetaHub) {
+          this.state.status = GameStatus.Menu;
+          this.emit('status_change', this.state.status);
+      }
+  }
+
+  equipMetaPerk(perkId: string | null) {
+      this.metaProgressionSystem.setEquippedStartingPerk(this.state, perkId);
+      Persistence.save({
+          metaCurrency: this.state.metaState.currency,
+          metaXP: this.state.metaState.xp,
+          equippedStartingPerk: this.state.metaState.equippedStartingPerk
+      });
+  }
+
   togglePause() {
-    // Allow pausing if Playing OR WaveIntro
     if (this.state.status === GameStatus.Playing || this.state.status === GameStatus.WaveIntro) {
       this.state.previousStatus = this.state.status;
       this.state.status = GameStatus.Paused;
-      this.inputManager.resetAll(); // Prevent stuck keys
+      this.inputManager.resetAll();
       this.emit('status_change', this.state.status);
     } else if (this.state.status === GameStatus.Paused) {
       this.state.status = this.state.previousStatus;
-      this.inputManager.resetAll(); // Prevent stuck keys
+      this.inputManager.resetAll();
       this.emit('status_change', this.state.status);
     }
   }
   
-  /**
-   * DEV CONSOLE: Toggles Dev Console visibility
-   */
   toggleConsole() {
-    // If open, close it
     if (this.state.status === GameStatus.DevConsole) {
         this.state.status = this.state.previousStatus;
         this.inputManager.resetAll();
         this.emit('status_change', this.state.status);
     } 
-    // If closed (and game is running/paused/shop), open it
     else if (
         this.state.status === GameStatus.Playing || 
         this.state.status === GameStatus.WaveIntro || 
@@ -297,109 +285,63 @@ export class GameEngine {
     }
   }
 
-  /**
-   * DEV CONSOLE: Give Score
-   */
   giveScore(amount: number) {
       if (amount <= 0) return;
       this.state.score += amount;
       this.emit('score_change', this.state.score);
   }
   
-  /**
-   * DEV CONSOLE: Open Shop
-   * Transitions directly to shop state.
-   */
   openDevShop() {
       this.state.status = GameStatus.Shop;
       this.inputManager.resetAll();
       this.emit('status_change', this.state.status);
   }
 
-  /**
-   * DEV CONSOLE: Jump to specific wave
-   */
   jumpToWave(targetWave: number) {
       if (targetWave < 1) return;
-      
-      // 1. Clear Active Entities
       this.state.entityManager.removeByType(EntityType.Enemy);
       this.state.entityManager.removeByType(EntityType.Projectile);
       this.state.entityManager.removeByType(EntityType.Particle);
       this.state.entityManager.removeByType(EntityType.Hazard);
-      
-      // 2. Setup Wave Counter
-      // prepareNextWave increments the wave, so we set it to target - 1
       this.state.wave = targetWave - 1;
-      
-      // 3. Prepare Wave Logic (Budgets, Boss Checks, etc.)
       this.waveSystem.prepareNextWave(this.state);
-      
-      // 4. Refill Ammo (Reset Player State for fair test)
       if (this.state.player) {
           this.state.player.currentAmmo = this.state.player.maxAmmo;
           this.state.player.isReloading = false;
           this.state.player.reloadTimer = 0;
           this.state.player.wantsToFire = false;
       }
-      
-      // 5. Start Wave Intro
       this.startWaveIntro();
   }
 
-  /**
-   * Closes the shop and starts the next wave.
-   */
   closeShop() {
       if (this.state.status !== GameStatus.Shop) return;
-      
       this.startWaveIntro();
       this.inputManager.resetAll();
   }
 
-  /**
-   * Extraction Logic: Bank 100% and Show Success Screen
-   */
   extract() {
       if (this.state.status !== GameStatus.Extraction) return;
-
-      // Bank 100%
-      this.state.metaCurrency += this.state.runMetaCurrency;
-      this.state.metaXP += this.state.runMetaXP;
-      
-      // Save
+      this.metaProgressionSystem.consolidateRewards(this.state, this.state.runMetaCurrency, this.state.runMetaXP);
       Persistence.save({
-          metaCurrency: this.state.metaCurrency,
-          metaXP: this.state.metaXP
+          metaCurrency: this.state.metaState.currency,
+          metaXP: this.state.metaState.xp,
+          equippedStartingPerk: this.state.metaState.equippedStartingPerk
       });
-
-      // Transition to Success Screen
       this.state.status = GameStatus.ExtractionSuccess;
-      this.inputManager.resetAll(); // CRITICAL: Reset inputs before screen switch
+      this.inputManager.resetAll();
       this.emit('status_change', this.state.status);
   }
 
-  /**
-   * Called from Extraction Success screen to return to menu
-   */
   completeExtraction() {
       if (this.state.status !== GameStatus.ExtractionSuccess) return;
       this.quitGame();
   }
 
-  /**
-   * Extraction Logic: Continue (Risk)
-   */
   continueRun() {
       if (this.state.status !== GameStatus.Extraction) return;
-
-      // Mark boss as defeated for future checkpoints
       this.state.hasDefeatedFirstBoss = true;
-
-      // Prepare Next Wave (Logic skipped in update loop to hold state)
       this.waveSystem.prepareNextWave(this.state);
-      
-      // Proceed to Shop
       this.state.status = GameStatus.Shop;
       this.emit('status_change', this.state.status);
       this.emit('wave_change', this.state.wave);
@@ -409,7 +351,7 @@ export class GameEngine {
   resumeGame() {
     if (this.state.status === GameStatus.Paused) {
       this.state.status = this.state.previousStatus;
-      this.inputManager.resetAll(); // Prevent stuck keys
+      this.inputManager.resetAll();
       this.emit('status_change', this.state.status);
     }
   }
@@ -417,50 +359,37 @@ export class GameEngine {
   quitGame() {
     this.state.status = GameStatus.Menu;
     this.loop.stop();
-    this.inputManager.resetAll(); // Prevent stuck keys
+    this.inputManager.resetAll();
     this.emit('status_change', this.state.status);
   }
 
-  /**
-   * Transition to WaveIntro state.
-   * This handles the 3-2-1 countdown before gameplay.
-   */
   startWaveIntro() {
       this.state.status = GameStatus.WaveIntro;
       this.state.waveIntroTimer = 3.0;
-      this.state.waveActive = false; // Wave System should not check clear condition
-      
-      // CRITICAL: Reset inputs on start of any wave (including boss intro)
+      this.state.waveActive = false;
       this.inputManager.resetAll(); 
       if (this.state.player) {
           this.state.player.wantsToFire = false;
-          this.state.player.burstQueue = 0; // Clear burst buffer
-      }
-
-      // Auto-Fill Ammo Loop Fix
-      if (this.state.player) {
+          this.state.player.burstQueue = 0;
           this.state.player.currentAmmo = this.state.player.maxAmmo;
           this.state.player.isReloading = false;
           this.state.player.reloadTimer = 0;
+          
+          // META PERK HOOK: Wave Start
+          if (this.state.metaState.equippedStartingPerk) {
+              this.metaProgressionSystem.onWaveStart(this.state.player, this.state.metaState.equippedStartingPerk);
+          }
       }
-      
       this.emit('status_change', this.state.status);
       this.emit('wave_change', this.state.wave);
       this.emit('wave_intro_timer', 3);
   }
 
-  /**
-   * Buy an upgrade from the Shop using Score.
-   */
   buyUpgrade(upgradeId: string) {
       if (this.state.status !== GameStatus.Shop) return;
-      
       const success = this.upgradeSystem.buyUpgrade(this.state, upgradeId);
       if (success) {
-          // Update score UI
           this.emit('score_change', this.state.score);
-          
-          // Update player stats if needed
           if (this.state.player) {
             this.emit('player_health_change', { 
                 current: this.state.player.health, 
@@ -473,16 +402,9 @@ export class GameEngine {
       }
   }
 
-  /**
-   * --- Main Game Loop ---
-   * Called by the Loop class every animation frame.
-   */
   private update(dt: number) {
-    // 1. Always process global input (Pause)
     const input = this.inputManager.getState();
     
-    // Edge Detection for Escape Key
-    // Disabled pause toggle via Escape if in DevConsole (handled by console UI)
     if (this.state.status !== GameStatus.DevConsole) {
         if (input.escape && !this.wasEscapePressed) {
           this.togglePause();
@@ -490,136 +412,204 @@ export class GameEngine {
     }
     this.wasEscapePressed = input.escape;
 
-    // 2. Special State: Wave Intro (Countdown)
     if (this.state.status === GameStatus.WaveIntro) {
         this.state.waveIntroTimer -= dt;
-        
-        // Notify UI of countdown
         this.emit('wave_intro_timer', Math.ceil(this.state.waveIntroTimer));
-
         if (this.state.waveIntroTimer <= 0) {
-            // Start the wave!
             this.state.status = GameStatus.Playing;
             this.state.waveActive = true;
-            this.inputManager.resetAll(); // CRITICAL: Reset again on exact moment of transition to prevent ghost inputs
-            // Ensure no latent firing state on frame 1
+            this.inputManager.resetAll();
             if (this.state.player) {
                 this.state.player.wantsToFire = false;
             }
             this.emit('status_change', this.state.status);
         }
-        
-        // Do NOT run other systems (Player, Enemies, etc.) during intro
-        // Maintenance cleanup is fine
         this.state.entityManager.cleanup();
         return; 
     }
 
-    // 3. Guard: Only update game logic if Playing
-    // This implicitly pauses the game if Status is DevConsole or Paused
     if (this.state.status !== GameStatus.Playing) return;
 
+    // Hook Data
+    const perkId = this.state.metaState.equippedStartingPerk;
     const previousScore = this.state.score;
-    const previousStatus = this.state.status;
-    const previousWave = this.state.wave;
+    const player = this.state.player;
     
-    // Snapshot player state for health change detection
+    // HOOK: Update Logic (Kinetic Charger etc)
+    if (player && perkId) {
+        this.metaProgressionSystem.updatePerkLogic(dt, this.state, input);
+        
+        // HOOK: Detect Dash
+        if (player.isDashing && !this.previousDashState) {
+            this.metaProgressionSystem.onDash(player, perkId);
+        }
+        this.previousDashState = player.isDashing;
+    }
+
+    // HOOK: Hazard Seals Logic (Manual Override since we can't touch PlayerSystem)
+    if (player && perkId === 'pack_seals') {
+        // Debounce
+        if (this.hazardContactCooldown > 0) this.hazardContactCooldown -= dt;
+        
+        // Check Contact
+        if (this.metaProgressionSystem.shouldApplyHazardSlow(player, perkId)) {
+            // Check if Slowed
+            if (player.speedMultiplier < 1.0) {
+                // If seals exist, we need to know if we are IN a hazard.
+                // Assuming PlayerSystem set < 1.0 because of hazard.
+                // We will forcefully reset it if seals > 0 and then consume a seal.
+                // But we need to know if it's a NEW contact.
+                // Simplified: If speedMultiplier < 1.0 and seals > 0 and cooldown <= 0:
+                //   Restore speed, consume seal, set cooldown.
+                // Re-implementation: Check overlaps manually.
+                const hazards = this.state.entityManager.getByType(EntityType.Hazard) as HazardEntity[];
+                let inHazard = false;
+                for (const h of hazards) {
+                    if (!h.isPlayerOwned && Vec2.dist(player.position, h.position) < h.radius + player.radius) {
+                        inHazard = true;
+                        break;
+                    }
+                }
+                
+                if (inHazard && (player.hazardSealsRemaining || 0) > 0) {
+                    if (this.hazardContactCooldown <= 0) {
+                        this.metaProgressionSystem.consumeHazardSeal(player, perkId);
+                        this.hazardContactCooldown = 2.0; // 2s Immunity/Debounce per seal use
+                    }
+                    player.speedMultiplier = 1.0; // Force Immunity
+                } else if (inHazard && (player.hazardSealsRemaining || 0) <= 0) {
+                    player.speedMultiplier = 0.45; // Tradeoff: Stronger Slow
+                }
+            }
+        }
+    }
+
+    // Capture Health for Hook
+    let hpBefore = player ? player.health : 0;
+
+    // --- SYSTEM UPDATE ---
     let prevShields = -1;
     if (this.state.player) prevShields = this.state.player.currentShields;
 
-    // 4. Execute System Pipeline
     for (const system of this.systems) {
       system.update(dt, this.state, input);
     }
+    
+    // HOOK: Damage Interception (Armor Plating / Scrap Injector)
+    // If health dropped, we might want to refund some if a perk blocked it.
+    // NOTE: DamageSystem modifies health directly. We have to react post-facto or modify DamageSystem.
+    // Since we cannot modify DamageSystem, we check the delta.
+    if (player && player.active && perkId) {
+        const hpAfter = player.health;
+        const damageTaken = hpBefore - hpAfter;
+        if (damageTaken > 0) {
+            const actualDamage = this.metaProgressionSystem.onPlayerDamage(player, perkId, damageTaken);
+            // Refund difference
+            const refund = damageTaken - actualDamage;
+            if (refund > 0) {
+                player.health += refund;
+                // Clamp? Not strictly needed as we just subtracted.
+            }
+        }
+    }
 
-    // 5. Maintenance (Cleanup dead entities)
+    // HOOK: Score Multiplier (Salvage Magnet)
+    const currentScore = this.state.score;
+    if (currentScore > previousScore && perkId) {
+        const gain = currentScore - previousScore;
+        const mult = this.metaProgressionSystem.getScoreMultiplier(this.state, perkId);
+        if (mult !== 1.0) {
+            const bonus = Math.floor(gain * mult) - gain;
+            this.state.score += bonus;
+        }
+    }
+
     this.state.entityManager.cleanup();
 
-    // 6. Game Over Check (Death)
+    // Death Check
     if (!this.state.isPlayerAlive) {
       this.state.status = GameStatus.GameOver;
-      this.inputManager.resetAll(); // CRITICAL: Reset inputs on death
+      this.inputManager.resetAll(); 
       
-      // DEATH PENALTY LOGIC
+      let recoveredCurrency = 0;
+      let recoveredXP = 0;
+
       if (this.state.hasDefeatedFirstBoss) {
-          // Post-Boss: Keep 25%
-          this.state.metaCurrency += Math.floor(this.state.runMetaCurrency * 0.25);
-          this.state.metaXP += Math.floor(this.state.runMetaXP * 0.25);
+          recoveredCurrency = Math.floor(this.state.runMetaCurrency * 0.25);
+          recoveredXP = Math.floor(this.state.runMetaXP * 0.25);
       } else {
-          // Early Death (Waves 1-9): Keep 15%
-          this.state.metaCurrency += Math.floor(this.state.runMetaCurrency * 0.15);
-          this.state.metaXP += Math.floor(this.state.runMetaXP * 0.15);
+          recoveredCurrency = Math.floor(this.state.runMetaCurrency * 0.15);
+          recoveredXP = Math.floor(this.state.runMetaXP * 0.15);
       }
       
-      // Save Persistent Progress
+      // Extractor's Gamble Tradeoff
+      if (perkId === 'pack_gamble' && this.state.isBossWave) {
+          recoveredXP = 0;
+      }
+
+      this.metaProgressionSystem.consolidateRewards(this.state, recoveredCurrency, recoveredXP);
       Persistence.save({
-          metaCurrency: this.state.metaCurrency,
-          metaXP: this.state.metaXP
+          metaCurrency: this.state.metaState.currency,
+          metaXP: this.state.metaState.xp,
+          equippedStartingPerk: this.state.metaState.equippedStartingPerk
       });
 
       this.loop.stop();
       this.emit('game_over');
       this.emit('status_change', GameStatus.GameOver);
-      return; // Stop processing this frame
+      return; 
     }
     
-    // 7. Check Wave Completion
+    // Wave Clear
     if (this.state.waveCleared) {
-        // Wave Completed!
-
-        // 1. Clear Projectiles & Hazards
         this.state.entityManager.removeByType(EntityType.Projectile);
         this.state.entityManager.removeByType(EntityType.Hazard);
 
-        const wasBossWave = this.state.isBossWave; // Capture state before next wave prep
+        // HOOK: Wave Clear
+        if (this.state.player && perkId) {
+            this.metaProgressionSystem.onWaveClear(this.state, this.state.player, perkId);
+        }
+        
+        // HOOK: Boss Kill Reward
+        if (this.state.isBossWave && perkId) {
+            this.metaProgressionSystem.onBossKill(this.state, perkId);
+        }
+
+        const wasBossWave = this.state.isBossWave; 
 
         if (wasBossWave) {
-            // TRIGGER EXTRACTION
             this.state.status = GameStatus.Extraction;
             this.state.waveCleared = false;
-            
             this.emit('status_change', this.state.status);
-            this.inputManager.resetAll(); // CRITICAL: Reset inputs on extraction UI
+            this.inputManager.resetAll(); 
             return;
         } else {
-            // NORMAL FLOW
             this.waveSystem.prepareNextWave(this.state);
             this.state.status = GameStatus.Shop;
-            this.state.waveCleared = false; // Reset flag
-            
+            this.state.waveCleared = false; 
             this.emit('status_change', this.state.status);
             this.emit('wave_change', this.state.wave);
-            this.inputManager.resetAll(); // CRITICAL: Reset inputs on shop open
+            this.inputManager.resetAll(); 
             return; 
         }
     }
 
-    // 8. Reactivity & Events
+    // Events
     if (this.state.score !== previousScore) {
       this.emit('score_change', this.state.score);
     }
     
-    if (this.state.wave !== previousWave) {
-      this.emit('wave_change', this.state.wave);
-    }
-
-    // Calculate Enemies Remaining (UI Logic)
+    const previousWave = 0; // Not tracked locally here properly but loop handles state.wave
+    
     let currentEnemiesRemaining = 0;
     if (this.state.waveActive) {
         currentEnemiesRemaining = this.state.getEnemiesRemaining();
     }
-    
     if (currentEnemiesRemaining !== this.lastEnemiesRemaining) {
         this.emit('wave_progress', currentEnemiesRemaining);
         this.lastEnemiesRemaining = currentEnemiesRemaining;
     }
     
-    // Status Change (General catch-all)
-    if (this.state.status !== previousStatus) {
-      this.emit('status_change', this.state.status);
-    }
-
-    // Health/Shield Change Check
     if (this.state.player) {
         const p = this.state.player;
         if (p.health !== this.lastPlayerHealth || p.currentShields !== prevShields) {
@@ -633,31 +623,24 @@ export class GameEngine {
         }
     }
 
-    // Hit Event Feedback
     if (this.state.hitEvents.length > 0) {
         this.emit('enemy_hit');
     }
 
-    // Boss Health Tracking
     if (this.state.isBossWave) {
-        // Find Boss
         const boss = this.state.entityManager.getAll().find(e => e.type === EntityType.Enemy && (e as EnemyEntity).variant === EnemyVariant.Boss) as EnemyEntity | undefined;
-        
         if (boss) {
-            // Boss exists
             if (boss.health !== this.lastBossHealth) {
                 this.emit('boss_health_change', { current: boss.health, max: boss.maxHealth, active: true });
                 this.lastBossHealth = boss.health;
             }
         } else {
-            // No boss found (dead or not spawned yet)
             if (this.lastBossHealth !== -1) {
                 this.emit('boss_health_change', { current: 0, max: 100, active: false });
                 this.lastBossHealth = -1;
             }
         }
     } else {
-        // Not a boss wave, ensure UI is clear
         if (this.lastBossHealth !== -1) {
              this.emit('boss_health_change', { current: 0, max: 100, active: false });
              this.lastBossHealth = -1;
@@ -665,9 +648,6 @@ export class GameEngine {
     }
   }
 
-  /**
-   * --- UI Event Bus ---
-   */
   on(event: GameEventType, listener: GameEventListener) {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());

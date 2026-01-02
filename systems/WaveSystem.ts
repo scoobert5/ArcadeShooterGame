@@ -27,6 +27,11 @@ export class WaveSystem implements System {
                 state.player.health = Math.min(state.player.maxHealth, state.player.health + healAmount);
             }
             
+            // --- PERK: FIELD_PATCH (Small fixed heal) ---
+            if (state.player.fieldPatchPerk) {
+                state.player.health = Math.min(state.player.maxHealth, state.player.health + 10);
+            }
+            
             // --- Shield Regeneration ---
             // Shields only refill at start of wave
             if (state.player.maxShields > 0) {
@@ -56,6 +61,11 @@ export class WaveSystem implements System {
     
     // Check for Boss Wave (Every 10 levels)
     state.isBossWave = (state.wave % 10 === 0);
+
+    // --- PERK: DASH_PRIME Reset ---
+    if (state.player && state.player.dashPrimePerWave) {
+        state.player.dashPrimeUsedThisWave = false;
+    }
 
     if (state.isBossWave) {
         // BOSS WAVE LOGIC

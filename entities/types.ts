@@ -143,6 +143,41 @@ export interface PlayerEntity extends BaseEntity {
   shieldsDisabled: boolean; // Disabled by Phase Runner
   dashInvulnerable: boolean; // Enabled by Phase Runner
   fireRateMultMoving: number; // Reduced by Overclock Drive (< 1.0)
+
+  // Perk Flags
+  dashPrimePerWave: boolean;
+  dashPrimeUsedThisWave: boolean;
+  autoReloadPerk: boolean;
+  fieldPatchPerk: boolean;
+
+  // --- OPERATOR STARTING PACK STATE (Meta Phase 2 Refactor) ---
+  // Replaced individual boolean flags with pack-specific tracking fields
+  
+  // Kinetic Charger
+  kineticTimer?: number;
+  kineticReady?: boolean;
+  
+  // Armor Plating
+  armorPlatingActive?: boolean;
+  
+  // Thruster Burst
+  thrusterBurstAvailable?: boolean; // Reset on wave start
+  
+  // Overclock Fuse
+  overclockTimer?: number;
+  baseFireRate?: number; // Snapshot for restoring/modifying
+  
+  // Targeting Uplink
+  uplinkTimer?: number;
+  uplinkActive?: boolean;
+  lastRotation?: number; // To track stability
+  
+  // Hazard Seals
+  hazardSealsRemaining?: number;
+  
+  // Scrap Injector
+  scrapShieldAmount?: number;
+  scrapShieldTimer?: number;
 }
 
 // Added 'telegraph_hazard' and 'spawn_hazard'

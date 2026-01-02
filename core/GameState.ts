@@ -12,7 +12,8 @@ export enum GameStatus {
   Shop = 'shop', // Upgrade Shop (Opens between waves)
   DevConsole = 'dev_console', // Developer Testing Console
   Extraction = 'extraction', // Post-Boss Risk/Reward Screen
-  ExtractionSuccess = 'extraction_success' // Confirmation screen after extracting
+  ExtractionSuccess = 'extraction_success', // Confirmation screen after extracting
+  MetaHub = 'meta_hub' // New: Meta Progression Hub
 }
 
 export interface HitEvent {
@@ -36,6 +37,19 @@ export interface WaveWeights {
   [EnemyVariant.Tank]: number;
   [EnemyVariant.Shooter]: number; // Added Shooter
   [EnemyVariant.Boss]: number;
+}
+
+/**
+ * Persistent Meta Progression State
+ * Stores long-term progress that survives individual runs.
+ */
+export interface MetaState {
+    currency: number;
+    xp: number;
+    level: number; // Derived from XP, stored for easy access
+    unlockedMetaCategories: Set<string>;
+    equippedStartingPerk: string | null;
+    companionSlots: number;
 }
 
 /**
@@ -66,8 +80,12 @@ export class GameState {
   isBossWave: boolean; // Flag to indicate if current wave is a boss encounter
   
   // META PROGRESSION STATE
-  metaCurrency: number; // Persistent Total
-  metaXP: number;       // Persistent Total
+  metaCurrency: number; // Legacy Persistent Total (Synced)
+  metaXP: number;       // Legacy Persistent Total (Synced)
+  
+  // NEW: Structured Meta State
+  metaState: MetaState;
+
   runMetaCurrency: number; // Earned this run (At Risk)
   runMetaXP: number;       // Earned this run (At Risk)
   hasDefeatedFirstBoss: boolean; // Flag for death penalty logic
@@ -134,6 +152,16 @@ export class GameState {
     this.runMetaCurrency = 0;
     this.runMetaXP = 0;
     this.hasDefeatedFirstBoss = false;
+
+    // Init Structured Meta State
+    this.metaState = {
+        currency: 0,
+        xp: 0,
+        level: 1, // Default Level 1
+        unlockedMetaCategories: new Set<string>(),
+        equippedStartingPerk: null,
+        companionSlots: 0
+    };
 
     this.areUpgradesExhausted = false;
     this.hitEvents = [];

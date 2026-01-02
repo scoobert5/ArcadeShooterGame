@@ -201,8 +201,13 @@ export class PlayerSystem implements System {
                 trailDuration += 1.5; 
             }
 
-            // Increase fatigue
-            player.dashFatigue = Math.min(1.0, player.dashFatigue + 0.35);
+            // Increase fatigue (PERK CHECK: DASH_PRIME)
+            if (player.dashPrimePerWave && !player.dashPrimeUsedThisWave) {
+                // Free dash, no fatigue increase
+                player.dashPrimeUsedThisWave = true;
+            } else {
+                player.dashFatigue = Math.min(1.0, player.dashFatigue + 0.35);
+            }
 
             // Dash direction determined by MOUSE/AIM (not movement keys, per prompt C.1)
             const dx = input.pointer.x - player.position.x;
@@ -269,6 +274,12 @@ export class PlayerSystem implements System {
     // 3. Firing Intent (Passed to ProjectileSystem)
     // Cannot fire while dashing
     player.wantsToFire = input.fire && !player.isDashing;
+
+    // --- PERK: AUTO_RELOAD ---
+    if (player.autoReloadPerk && player.wantsToFire && player.currentAmmo <= 0 && !player.isReloading) {
+        player.isReloading = true;
+        player.reloadTimer = player.maxReloadTime;
+    }
 
     // 4. Ability Logic (Repulse Pulse) - NOW ON ABILITY KEY (Right Click)
     if (input.ability && player.repulseCooldown <= 0) {

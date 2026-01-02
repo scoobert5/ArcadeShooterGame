@@ -11,7 +11,8 @@ import { BossHealthBar } from './UI/BossHealthBar';
 import { ExtractionMenu } from './UI/ExtractionMenu';
 import { ExtractionSuccess } from './UI/ExtractionSuccess';
 import { GameOver } from './UI/GameOver';
-import { Play } from 'lucide-react';
+import { MetaHub } from './UI/MetaHub';
+import { Play, Grid } from 'lucide-react';
 import { GameStatus } from '../core/GameState';
 
 export const GameContainer: React.FC = () => {
@@ -32,6 +33,8 @@ export const GameContainer: React.FC = () => {
   
   // Meta State for UI
   const [runMeta, setRunMeta] = useState({ currency: 0, xp: 0 });
+  // Add a trigger for re-rendering meta hub when state changes inside engine
+  const [metaUpdateTrigger, setMetaUpdateTrigger] = useState(0);
 
   useEffect(() => {
     // Subscribe to engine events
@@ -39,11 +42,14 @@ export const GameContainer: React.FC = () => {
     const handleStatusChange = (status: GameStatus) => {
         setGameState(status);
         
-        // Sync Meta on status change (e.g. hitting extraction)
+        // Sync Meta on status change (e.g. hitting extraction or hub)
         setRunMeta({
             currency: engine.state.runMetaCurrency,
             xp: engine.state.runMetaXP
         });
+        
+        // Force refresh of meta views
+        setMetaUpdateTrigger(prev => prev + 1);
 
         // Refocus canvas when closing DevConsole
         if (status !== GameStatus.DevConsole && document.activeElement instanceof HTMLElement) {
@@ -162,6 +168,19 @@ export const GameContainer: React.FC = () => {
       engine.continueRun();
   };
 
+  const handleOpenMetaHub = () => {
+      engine.enterMetaHub();
+  };
+
+  const handleCloseMetaHub = () => {
+      engine.exitMetaHub();
+  };
+
+  const handleEquipPerk = (perkId: string | null) => {
+      engine.equipMetaPerk(perkId);
+      setMetaUpdateTrigger(prev => prev + 1); // Force UI refresh
+  };
+
   const handleConsoleCommand = (cmd: string) => {
       const lowerCmd = cmd.toLowerCase();
       if (lowerCmd.startsWith('wave_')) {
@@ -242,6 +261,15 @@ export const GameContainer: React.FC = () => {
           />
       )}
       
+      {/* Meta Hub Overlay */}
+      {gameState === GameStatus.MetaHub && (
+          <MetaHub 
+              state={engine.state}
+              onEquipPerk={handleEquipPerk}
+              onBack={handleCloseMetaHub}
+          />
+      )}
+      
       {/* Pause Menu Overlay */}
       {gameState === GameStatus.Paused && (
         <PauseMenu onResume={handleResume} onQuit={handleQuit} />
@@ -258,13 +286,22 @@ export const GameContainer: React.FC = () => {
           <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 mb-8 tracking-tight uppercase italic">
             Neon Blitz
           </h1>
-          <button
-            onClick={handleStart}
-            className="group flex items-center gap-3 px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-indigo-500/30"
-          >
-            <Play className="fill-current" />
-            START GAME
-          </button>
+          <div className="flex flex-col gap-4 w-64">
+            <button
+                onClick={handleStart}
+                className="group flex items-center justify-center gap-3 px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-indigo-500/30"
+            >
+                <Play className="fill-current" />
+                START GAME
+            </button>
+            <button
+                onClick={handleOpenMetaHub}
+                className="group flex items-center justify-center gap-3 px-8 py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-full font-bold transition-all hover:scale-105 active:scale-95 border border-slate-700"
+            >
+                <Grid className="w-5 h-5" />
+                META HUB
+            </button>
+          </div>
           
           <div className="mt-8 text-slate-500 text-sm">
             Use <kbd className="bg-slate-800 px-2 py-1 rounded text-slate-300">WASD</kbd> to move, <kbd className="bg-slate-800 px-2 py-1 rounded text-slate-300">Click</kbd> to shoot, <kbd className="bg-slate-800 px-2 py-1 rounded text-slate-300">R</kbd> to reload, <kbd className="bg-slate-800 px-2 py-1 rounded text-slate-300">ESC</kbd> to pause

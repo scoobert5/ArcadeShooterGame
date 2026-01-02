@@ -1,6 +1,8 @@
+
 export interface MetaData {
   metaCurrency: number;
   metaXP: number;
+  equippedStartingPerk?: string | null;
 }
 
 const STORAGE_KEY = 'neon_blitz_meta_v1';
@@ -21,13 +23,14 @@ export const Persistence = {
         const data = JSON.parse(raw);
         return {
           metaCurrency: data.metaCurrency || 0,
-          metaXP: data.metaXP || 0
+          metaXP: data.metaXP || 0,
+          equippedStartingPerk: data.equippedStartingPerk || null
         };
       }
     } catch (e) {
       console.error('Failed to load meta progress', e);
     }
     // Default
-    return { metaCurrency: 0, metaXP: 0 };
+    return { metaCurrency: 0, metaXP: 0, equippedStartingPerk: null };
   }
 };
