@@ -13,7 +13,8 @@ export enum UpgradeRarity {
   Common = 'common',
   Rare = 'rare',
   Epic = 'epic',
-  Legendary = 'legendary'
+  Legendary = 'legendary',
+  Identity = 'identity' // One-time unique upgrades
 }
 
 export enum EnemyVariant {
@@ -126,7 +127,7 @@ export interface PlayerEntity extends BaseEntity {
   postDashDamageBuff: number; // Multiplier for 1s after dash
   postDashTimer: number; // Timer for buffs
   
-  // NEW MECHANICS (Step 22 Expansion)
+  // NEW MECHANICS (Phase 2 Expansion)
   focusFireTarget?: string; // ID of enemy last hit
   focusFireStacks: number; // Current bonus damage stacks
   cullingThreshold: number; // HP% to execute/bonus damage
@@ -135,6 +136,13 @@ export interface PlayerEntity extends BaseEntity {
   staticCharge: number; // Built up charge from movement
   afterburnerEnabled: boolean; // Spawns fire trails on dash
   nitroEnabled: boolean; // Converts speed to fire rate
+
+  // IDENTITY TRADE-OFFS
+  activeIdentityId?: string; // The ID of the single allowed Identity upgrade
+  ricochetEnabled: boolean; // Disabled by Focus Lock
+  shieldsDisabled: boolean; // Disabled by Phase Runner
+  dashInvulnerable: boolean; // Enabled by Phase Runner
+  fireRateMultMoving: number; // Reduced by Overclock Drive (< 1.0)
 }
 
 // Added 'telegraph_hazard' and 'spawn_hazard'
@@ -155,11 +163,16 @@ export interface EnemyEntity extends BaseEntity {
   aiState: BossAiState; 
   aiStateTimer: number;
   orbitDir: number; // 1 (CW) or -1 (CCW)
-  hasEnteredArena: boolean; // Tracks if the enemy has fully entered the screen bounds
+  hasEnteredArena?: boolean; // Tracks if the enemy has fully entered the screen bounds
   
   // Boss Specifics
   attackCooldown: number;
   chargeVector?: Vector2; // Direction locked in for charge
+  
+  // BOSS VULNERABILITY CYCLE
+  bossVulnTimer?: number;        // countdown in seconds
+  bossVulnIsActive?: boolean;    // true only during vulnerable phase
+  bossVulnNextDuration?: number; // stores current phase duration for clarity (optional)
   
   // Ranged & Boss Pulse Logic
   shootTimer?: number; 
@@ -172,9 +185,13 @@ export interface ProjectileEntity extends BaseEntity {
   type: EntityType.Projectile;
   damage: number;
   lifetime: number; // Seconds remaining until despawn
+  maxLifetime: number; // Total lifetime at spawn
   ownerId: string;  // ID of the entity that fired this projectile
   isEnemyProjectile: boolean; // True if fired by an enemy (hurts player, ignored by enemies)
   
+  // Visualization
+  shape?: 'circle' | 'square' | 'diamond' | 'triangle';
+
   // Ricochet & Pierce State
   bouncesRemaining: number;
   piercesRemaining: number; // New: Number of enemies to pass through
@@ -186,6 +203,11 @@ export interface ProjectileEntity extends BaseEntity {
   isRicochet?: boolean; // Is this a bounced projectile?
   isTankShot?: boolean; // Is this a large tank projectile?
   isStaticShot?: boolean; // Consumes static charge for AoE/Dmg
+  
+  // Fragmentation Logic
+  age?: number; // Time alive
+  hasBurst?: boolean; // Has it fragmented yet?
+  isTankFragment?: boolean; // Is this a fragment?
 }
 
 export interface ParticleEntity extends BaseEntity {

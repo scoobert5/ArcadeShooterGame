@@ -235,7 +235,13 @@ export class GameEngine {
       fortressTimer: 0,
       staticCharge: 0,
       afterburnerEnabled: false,
-      nitroEnabled: false
+      nitroEnabled: false,
+
+      // IDENTITY TRADE-OFFS
+      ricochetEnabled: true,
+      shieldsDisabled: false,
+      dashInvulnerable: false,
+      fireRateMultMoving: 1.0
     };
     
     this.state.entityManager.add(player);

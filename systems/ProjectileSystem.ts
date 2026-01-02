@@ -50,6 +50,18 @@ export class ProjectileSystem implements System {
     // 2. Update Active Projectiles
     const projectiles = state.entityManager.getByType(EntityType.Projectile) as ProjectileEntity[];
     for (const p of projectiles) {
+      // Update Age
+      p.age = (p.age || 0) + dt;
+
+      // Tank Projectile Fragmentation Logic
+      // If it's a tank shot, hasn't burst yet, isn't a fragment itself, and has lived >= 5.0s
+      if (p.isTankShot && !p.hasBurst && !p.isTankFragment && p.age >= 5.0) {
+          p.hasBurst = true;
+          p.active = false; // Destroy parent
+          this.spawnTankFragments(state, p);
+          continue; // Stop processing this projectile
+      }
+
       // Decrease Lifetime
       p.lifetime -= dt;
       if (p.lifetime <= 0) {
@@ -80,6 +92,45 @@ export class ProjectileSystem implements System {
             p.active = false;
         }
     }
+  }
+
+  // Spawns 8 fragments radially from the parent projectile
+  private spawnTankFragments(state: GameState, parent: ProjectileEntity) {
+      const count = 8;
+      const speed = 180; // Slightly faster than the slow tank shell
+      const step = (Math.PI * 2) / count;
+
+      for (let i = 0; i < count; i++) {
+          const angle = (step * i);
+          const vx = Math.cos(angle) * speed;
+          const vy = Math.sin(angle) * speed;
+
+          const fragment: ProjectileEntity = {
+              id: `frag_${parent.id}_${i}_${Math.random()}`,
+              type: EntityType.Projectile,
+              position: { ...parent.position },
+              velocity: { x: vx, y: vy },
+              radius: 6, // Smaller than tank shot
+              rotation: angle,
+              color: parent.color, // Inherit color
+              active: true,
+              damage: Math.ceil(parent.damage * 0.35), // Reduced damage
+              lifetime: 1.2, // Short lifetime
+              maxLifetime: 1.2,
+              ownerId: parent.ownerId,
+              isEnemyProjectile: true,
+              bouncesRemaining: 0,
+              piercesRemaining: 0,
+              ricochetSearchRadius: 0,
+              hitEntityIds: [],
+              isTankShot: false,
+              isTankFragment: true,
+              hasBurst: true, // Fragments cannot burst
+              shape: 'square', // Keep visual consistency
+              age: 0
+          };
+          state.entityManager.add(fragment);
+      }
   }
 
   // Fires one set of projectiles (one per stream)
@@ -151,6 +202,7 @@ export class ProjectileSystem implements System {
             active: true,
             damage: player.damage,
             lifetime: PROJECTILE_LIFETIME,
+            maxLifetime: PROJECTILE_LIFETIME,
             ownerId: player.id,
             isEnemyProjectile: false,
             // Init Ricochet properties
@@ -162,7 +214,10 @@ export class ProjectileSystem implements System {
             
             // Synergy Flags
             isVulnerabilityShot: appliesVulnerability,
-            isRicochet: false
+            isRicochet: false,
+            
+            // Init Age
+            age: 0
           };
 
           state.entityManager.add(projectile);

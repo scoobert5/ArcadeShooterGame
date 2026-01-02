@@ -4,7 +4,7 @@ import { CHAINS, SYNERGY_LEVELS, UpgradeFamily } from '../../data/upgrades';
 import { calculateUpgradeCost } from '../../utils/economy';
 import { UpgradeRarity } from '../../entities/types';
 import { GameState } from '../../core/GameState';
-import { Coins, ArrowUpCircle, PlayCircle, Zap, Shield, Wind } from 'lucide-react';
+import { Coins, ArrowUpCircle, PlayCircle, Zap, Shield, Wind, Lock, Fingerprint } from 'lucide-react';
 
 interface UpgradeShopProps {
   state: GameState;
@@ -20,12 +20,17 @@ export const UpgradeShop: React.FC<UpgradeShopProps> = ({ state, onBuy, onClose 
   const defenseCount = state.purchasedFamilyCounts.get('DEFENSE') || 0;
   const mobilityCount = state.purchasedFamilyCounts.get('MOBILITY') || 0;
 
+  // Identity State
+  const activeIdentityId = state.player?.activeIdentityId;
+  const activeIdentityName = activeIdentityId ? CHAINS.find(c => c.id === activeIdentityId)?.baseName : null;
+
   const getRarityColor = (rarity: UpgradeRarity) => {
     switch (rarity) {
       case UpgradeRarity.Common: return 'text-slate-300';
       case UpgradeRarity.Rare: return 'text-blue-300';
       case UpgradeRarity.Epic: return 'text-purple-300';
       case UpgradeRarity.Legendary: return 'text-amber-300';
+      case UpgradeRarity.Identity: return 'text-rose-300'; // Special Color for Identity
       default: return 'text-white';
     }
   };
@@ -98,6 +103,12 @@ export const UpgradeShop: React.FC<UpgradeShopProps> = ({ state, onBuy, onClose 
                 Tactical Upgrade
                 </h2>
                 <p className="text-slate-400 text-sm">Invest in specialized families to unlock Synergy Tiers.</p>
+                {activeIdentityName && (
+                    <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-rose-950/30 border border-rose-900/50 rounded text-rose-300 text-xs font-bold uppercase tracking-widest">
+                        <Fingerprint size={12} />
+                        Identity: {activeIdentityName}
+                    </div>
+                )}
             </div>
 
             {/* Synergy Dashboard */}
@@ -148,18 +159,26 @@ export const UpgradeShop: React.FC<UpgradeShopProps> = ({ state, onBuy, onClose 
                                 const nextTier = !isMaxed ? chain.tiers[currentLevel] : null;
                                 const cost = !isMaxed ? calculateUpgradeCost(state, chain.id) : 0;
                                 const canAfford = currentScore >= cost;
+                                
+                                // IDENTITY LOGIC
+                                const isIdentity = chain.isIdentity;
+                                const isIdentityLocked = isIdentity && activeIdentityId && activeIdentityId !== chain.id;
 
                                 return (
                                     <div 
                                         key={chain.id} 
                                         className={`
-                                            relative bg-slate-950 border border-slate-800 rounded-xl p-5 flex flex-col gap-3 transition-all duration-200
-                                            ${isMaxed ? 'opacity-50 grayscale' : ''}
-                                            ${!isMaxed && canAfford ? 'hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 hover:-translate-y-1' : ''}
+                                            relative bg-slate-950 border rounded-xl p-5 flex flex-col gap-3 transition-all duration-200 group
+                                            ${isMaxed ? 'border-slate-800 opacity-50 grayscale' : ''}
+                                            ${isIdentityLocked ? 'border-slate-800 bg-slate-950 opacity-40 grayscale pointer-events-none' : ''}
+                                            ${!isMaxed && !isIdentityLocked ? (isIdentity ? 'border-rose-900/50 hover:border-rose-500/50' : 'border-slate-800 hover:border-emerald-500/50') : ''}
+                                            ${!isMaxed && !isIdentityLocked && canAfford ? 'hover:shadow-lg hover:-translate-y-1' : ''}
                                         `}
                                     >
                                         <div className="flex justify-between items-center gap-2">
-                                            <h3 className="text-lg font-bold text-white truncate">{chain.baseName}</h3>
+                                            <h3 className={`text-lg font-bold truncate ${isIdentity ? 'text-rose-200' : 'text-white'}`}>
+                                                {chain.baseName}
+                                            </h3>
                                             <span className="flex-shrink-0 text-xs bg-slate-800 px-2 py-1 rounded text-slate-400 font-mono whitespace-nowrap min-w-[50px] text-center">
                                                 {currentLevel}/{chain.tiers.length}
                                             </span>
@@ -169,6 +188,15 @@ export const UpgradeShop: React.FC<UpgradeShopProps> = ({ state, onBuy, onClose 
                                             <div className="flex-1 flex flex-col justify-center items-center py-6 text-emerald-500 font-bold uppercase tracking-widest">
                                                 <ArrowUpCircle className="w-8 h-8 mb-2" />
                                                 Maxed
+                                            </div>
+                                        ) : isIdentityLocked ? (
+                                            <div className="flex-1 flex flex-col justify-center items-center py-6 text-slate-500 font-bold uppercase tracking-widest text-center">
+                                                <Lock className="w-8 h-8 mb-2 opacity-50" />
+                                                <span className="text-[10px]">Locked by Identity</span>
+                                                <div className="hidden group-hover:block absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center p-4 z-20 text-center border border-slate-700 rounded-xl">
+                                                    <Fingerprint className="text-rose-500 w-6 h-6 mb-2" />
+                                                    <p className="text-xs text-slate-300">You have already chosen <strong>{activeIdentityName}</strong> as your identity this run.</p>
+                                                </div>
                                             </div>
                                         ) : nextTier ? (
                                             <>
@@ -188,11 +216,12 @@ export const UpgradeShop: React.FC<UpgradeShopProps> = ({ state, onBuy, onClose 
                                                         className={`
                                                             w-full flex items-center justify-center gap-2 py-2 rounded font-bold transition-all
                                                             ${canAfford 
-                                                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg hover:shadow-emerald-500/20 active:scale-95' 
+                                                                ? (isIdentity ? 'bg-rose-700 hover:bg-rose-600 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white') 
                                                                 : 'bg-slate-800 text-slate-500 cursor-not-allowed'}
+                                                            ${canAfford ? 'shadow-lg active:scale-95' : ''}
                                                         `}
                                                     >
-                                                        <Coins className="w-4 h-4" />
+                                                        {isIdentity ? <Fingerprint className="w-4 h-4" /> : <Coins className="w-4 h-4" />}
                                                         {cost.toLocaleString()}
                                                     </button>
                                                 </div>

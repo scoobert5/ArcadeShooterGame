@@ -40,13 +40,14 @@ export class EnemySystem implements System {
             state.enemySpawnTimer = 0.05; // Extremely fast burst interval
         } else {
             // Decide new spawn type
-            // FIX: Gated burst logic to Wave 3+ to prevent Wave 1 clumping
-            const isBurst = !state.isBossWave && state.wave > 2 && Math.random() < 0.3 && state.enemiesRemainingInWave >= 12;
+            // CLUSTERING: 30% chance for small clusters (3-5), only after wave 2
+            const isBurst = !state.isBossWave && state.wave > 2 && Math.random() < 0.3 && state.enemiesRemainingInWave >= 5;
             
             if (isBurst) {
-                // Swarm Logic: Larger groups (6-9 enemies) to encourage richochet chains
-                this.burstRemaining = Math.floor(Math.random() * 4) + 6; 
-                this.burstLocation = this.calculateSpawnPosition(state.worldWidth, state.worldHeight); // Pick a spot for the squad
+                // Swarm Logic: Small groups (3-5)
+                this.burstRemaining = Math.floor(Math.random() * 3) + 3; 
+                // Initialize burst location with a safe default radius (e.g. 20)
+                this.burstLocation = this.calculateSpawnPosition(state.worldWidth, state.worldHeight, 20); 
                 
                 this.spawnEnemy(state, true);
                 this.burstRemaining--;
@@ -88,7 +89,10 @@ export class EnemySystem implements System {
       // Boss Radial Pulse
       if (enemy.variant === EnemyVariant.Boss) {
            if (enemy.shootTimer !== undefined && enemy.shootTimer <= 0) {
-               this.fireRadialPulse(state, enemy);
+               // Only fire if NOT vulnerable
+               if (!enemy.bossVulnIsActive) {
+                   this.fireRadialPulse(state, enemy);
+               }
                enemy.shootTimer = 1.0; 
            }
       }
@@ -123,103 +127,122 @@ export class EnemySystem implements System {
           enemy.attackCooldown -= dt;
       }
       
+      // --- BOSS VULNERABILITY CYCLE ---
+      if (enemy.variant === EnemyVariant.Boss) {
+          // Initialize timer if missing
+          if (enemy.bossVulnTimer === undefined) {
+              // Normal Phase: 7-10s
+              enemy.bossVulnTimer = 7.0 + Math.random() * 3.0; 
+              enemy.bossVulnIsActive = false;
+          }
+
+          enemy.bossVulnTimer -= dt;
+          
+          if (enemy.bossVulnTimer <= 0) {
+              // Flip State
+              if (!enemy.bossVulnIsActive) {
+                  // Enter Vulnerable Phase
+                  enemy.bossVulnIsActive = true;
+                  enemy.bossVulnTimer = 2.0; // 2 Seconds
+                  enemy.color = '#fbbf24'; // Visual Cue: Gold/Warning
+                  
+                  // Interrupt AI state to 'recovery' to stop active charges
+                  enemy.aiState = 'recovery'; 
+                  enemy.aiStateTimer = 2.0; 
+              } else {
+                  // Enter Normal Phase
+                  enemy.bossVulnIsActive = false;
+                  enemy.bossVulnTimer = 7.0 + Math.random() * 3.0; // 7-10s
+                  enemy.color = Colors.Boss; // Reset Color
+              }
+          }
+      }
+
       // --- BOSS AI STATE MACHINE (Movement/Attacks) ---
       if (enemy.variant === EnemyVariant.Boss) {
-          if (enemy.aiStateTimer <= 0) {
-              // State Transition Logic
-              
-              if (enemy.aiState === 'approach' || enemy.aiState === 'anchor') {
-                  // DECIDE NEXT MOVE
-                  // If cooldown is ready, try to attack
-                  if (enemy.attackCooldown <= 0 && player) {
-                      const dist = Vec2.dist(enemy.position, player.position);
-                      const rand = Math.random();
+          // If vulnerable, skip AI logic (just sit or drift slowly in recovery)
+          if (!enemy.bossVulnIsActive) {
+              if (enemy.aiStateTimer <= 0) {
+                  // State Transition Logic
+                  if (enemy.aiState === 'approach' || enemy.aiState === 'anchor') {
+                      // DECIDE NEXT MOVE
+                      if (enemy.attackCooldown <= 0 && player) {
+                          const dist = Vec2.dist(enemy.position, player.position);
+                          const rand = Math.random();
 
-                      if (dist < 250) {
-                          // Close range: High chance of Slam
-                          if (rand < 0.7) {
-                              enemy.aiState = 'telegraph_slam';
-                              enemy.aiStateTimer = 0.8; // Faster telegraph for close range
+                          if (dist < 250) {
+                              if (rand < 0.7) {
+                                  enemy.aiState = 'telegraph_slam';
+                                  enemy.aiStateTimer = 0.8;
+                              } else {
+                                  enemy.aiState = 'approach';
+                                  enemy.aiStateTimer = 1.0;
+                              }
                           } else {
-                              // Reposition
-                              enemy.aiState = 'approach';
-                              enemy.aiStateTimer = 1.0;
+                              if (rand < 0.45) {
+                                  enemy.aiState = 'telegraph_charge';
+                                  enemy.aiStateTimer = 0.6;
+                                  // Lock direction
+                                  const dx = player.position.x - enemy.position.x;
+                                  const dy = player.position.y - enemy.position.y;
+                                  enemy.chargeVector = Vec2.normalize({ x: dx, y: dy });
+                              } else if (rand < 0.9) {
+                                  enemy.aiState = 'telegraph_hazard';
+                                  enemy.aiStateTimer = 0.5;
+                              } else {
+                                  enemy.aiState = 'approach';
+                                  enemy.aiStateTimer = 1.5;
+                              }
                           }
                       } else {
-                          // Long range: Mix of Charge and Hazards
-                          if (rand < 0.45) {
-                              enemy.aiState = 'telegraph_charge';
-                              enemy.aiStateTimer = 0.6; // Telegraph time
-                              // Lock direction IMMEDIATELY
-                              const dx = player.position.x - enemy.position.x;
-                              const dy = player.position.y - enemy.position.y;
-                              enemy.chargeVector = Vec2.normalize({ x: dx, y: dy });
-                          } else if (rand < 0.9) {
-                              enemy.aiState = 'telegraph_hazard';
-                              enemy.aiStateTimer = 0.5;
-                          } else {
+                          // Wander/Idle
+                          if (enemy.aiState === 'anchor') {
                               enemy.aiState = 'approach';
-                              enemy.aiStateTimer = 1.5;
-                          }
-                      }
-                  } else {
-                      // Wander/Idle while cooling down
-                      if (enemy.aiState === 'anchor') {
-                          enemy.aiState = 'approach';
-                          enemy.aiStateTimer = 1.5 + Math.random();
-                      } else {
-                          if (Math.random() < 0.3) {
-                              enemy.aiState = 'anchor';
-                              enemy.aiStateTimer = 0.5;
+                              enemy.aiStateTimer = 1.5 + Math.random();
                           } else {
-                              enemy.aiState = 'approach';
-                              enemy.aiStateTimer = 1.5;
-                              enemy.orbitDir *= -1;
+                              if (Math.random() < 0.3) {
+                                  enemy.aiState = 'anchor';
+                                  enemy.aiStateTimer = 0.5;
+                              } else {
+                                  enemy.aiState = 'approach';
+                                  enemy.aiStateTimer = 1.5;
+                                  enemy.orbitDir *= -1;
+                              }
                           }
                       }
                   }
-              }
-              
-              else if (enemy.aiState === 'telegraph_slam') {
-                  // EXECUTE SLAM
-                  enemy.aiState = 'slam';
-                  enemy.aiStateTimer = 0.2; 
-                  this.performBossSlam(state, enemy);
-              }
-              
-              else if (enemy.aiState === 'slam') {
-                  enemy.aiState = 'recovery';
-                  enemy.aiStateTimer = 1.0; // Pause after slam
-              }
-              
-              else if (enemy.aiState === 'telegraph_charge') {
-                  // EXECUTE CHARGE
-                  enemy.aiState = 'charge';
-                  enemy.aiStateTimer = 2.0; // Increased duration for cross-map dash
-                  // Vector is already locked from previous state
-              }
-              
-              else if (enemy.aiState === 'charge') {
-                  enemy.aiState = 'recovery';
-                  enemy.aiStateTimer = 1.2; // Vulnerable after charge
-              }
-
-              else if (enemy.aiState === 'telegraph_hazard') {
-                  enemy.aiState = 'spawn_hazard';
-                  enemy.aiStateTimer = 0.1;
-                  this.performBossHazard(state, enemy);
-              }
-
-              else if (enemy.aiState === 'spawn_hazard') {
-                  enemy.aiState = 'recovery';
-                  enemy.aiStateTimer = 0.5; 
-              }
-              
-              else if (enemy.aiState === 'recovery') {
-                  // RESET
-                  enemy.aiState = 'approach';
-                  enemy.aiStateTimer = 1.0;
-                  enemy.attackCooldown = 1.5; // Reduced cooldown for more aggression (Was 2.5)
+                  
+                  else if (enemy.aiState === 'telegraph_slam') {
+                      enemy.aiState = 'slam';
+                      enemy.aiStateTimer = 0.2; 
+                      this.performBossSlam(state, enemy);
+                  }
+                  else if (enemy.aiState === 'slam') {
+                      enemy.aiState = 'recovery';
+                      enemy.aiStateTimer = 1.0; 
+                  }
+                  else if (enemy.aiState === 'telegraph_charge') {
+                      enemy.aiState = 'charge';
+                      enemy.aiStateTimer = 2.0;
+                  }
+                  else if (enemy.aiState === 'charge') {
+                      enemy.aiState = 'recovery';
+                      enemy.aiStateTimer = 1.2;
+                  }
+                  else if (enemy.aiState === 'telegraph_hazard') {
+                      enemy.aiState = 'spawn_hazard';
+                      enemy.aiStateTimer = 0.1;
+                      this.performBossHazard(state, enemy);
+                  }
+                  else if (enemy.aiState === 'spawn_hazard') {
+                      enemy.aiState = 'recovery';
+                      enemy.aiStateTimer = 0.5; 
+                  }
+                  else if (enemy.aiState === 'recovery') {
+                      enemy.aiState = 'approach';
+                      enemy.aiStateTimer = 1.0;
+                      enemy.attackCooldown = 1.5; 
+                  }
               }
           }
       } 
@@ -244,19 +267,13 @@ export class EnemySystem implements System {
         // 1. Boss Specific Movement Overrides
         if (enemy.variant === EnemyVariant.Boss) {
             
-            // Stationary States
-            if (enemy.aiState === 'telegraph_slam' || 
-                enemy.aiState === 'telegraph_charge' || 
-                enemy.aiState === 'telegraph_hazard' ||
-                enemy.aiState === 'recovery' || 
-                enemy.aiState === 'slam' ||
-                enemy.aiState === 'spawn_hazard') {
-                
+            // Stationary States (Including Vulnerable Stun if we want it, using Recovery)
+            if (['telegraph_slam','telegraph_charge','telegraph_hazard','recovery','slam','spawn_hazard'].includes(enemy.aiState)) {
                 enemy.velocity = { x: 0, y: 0 };
                 enemy.knockback.x *= 0.9;
                 enemy.knockback.y *= 0.9;
                 
-                // Face target during telegraph (but charge direction is locked)
+                // Rotation logic
                 if (enemy.aiState === 'telegraph_charge' && enemy.chargeVector) {
                     enemy.rotation = Math.atan2(enemy.chargeVector.y, enemy.chargeVector.x);
                 } else if (enemy.aiState.startsWith('telegraph')) {
@@ -268,28 +285,23 @@ export class EnemySystem implements System {
                 enemy.position.x += enemy.knockback.x * dt;
                 enemy.position.y += enemy.knockback.y * dt;
                 
-                // Apply strict clamping even when "still" (handles knockback push)
                 this.clampEnemyToBounds(enemy, state.worldWidth, state.worldHeight);
                 continue; 
             }
             
             if (enemy.aiState === 'charge') {
                 // CHARGE MOVEMENT
-                // Significantly faster to cover arena
-                const chargeSpeed = 1200; // Increased speed (Was 1100)
+                const chargeSpeed = 1200; 
                 const dir = enemy.chargeVector || { x: 1, y: 0 };
-                
                 enemy.velocity = Vec2.scale(dir, chargeSpeed);
                 enemy.rotation = Math.atan2(dir.y, dir.x);
-                
                 enemy.position.x += enemy.velocity.x * dt;
                 enemy.position.y += enemy.velocity.y * dt;
                 
-                // Strict Clamp Check - If hitting wall, stop charge early
                 const didCollide = this.clampEnemyToBounds(enemy, state.worldWidth, state.worldHeight);
                 if (didCollide) {
                     enemy.aiState = 'recovery';
-                    enemy.aiStateTimer = 1.5; // Stunned/Recovery from wall hit
+                    enemy.aiStateTimer = 1.5; 
                 }
                 continue;
             }
@@ -302,27 +314,19 @@ export class EnemySystem implements System {
         const dy = player.position.y - enemy.position.y;
         const distToPlayer = Math.sqrt(dx * dx + dy * dy);
         
-        let dirX = 0; 
-        let dirY = 0;
-        if (distToPlayer > 0) {
-             dirX = dx / distToPlayer;
-             dirY = dy / distToPlayer;
-        }
+        let dirX = 0, dirY = 0;
+        if (distToPlayer > 0) { dirX = dx / distToPlayer; dirY = dy / distToPlayer; }
 
-        let intentX = 0;
-        let intentY = 0;
+        let intentX = 0, intentY = 0;
 
         if (enemy.aiState === 'anchor') {
-            intentX = 0;
-            intentY = 0;
+            intentX = 0; intentY = 0;
         } else if (enemy.aiState === 'commit') {
-            intentX = dirX;
-            intentY = dirY;
+            intentX = dirX; intentY = dirY;
         } else {
             // Approach / Orbit
             const tanX = -dirY * enemy.orbitDir;
             const tanY = dirX * enemy.orbitDir;
-            // Blend Seek (0.4) and Tangent (0.6)
             intentX = (dirX * 0.4) + (tanX * 0.6);
             intentY = (dirY * 0.4) + (tanY * 0.6);
         }
@@ -331,7 +335,6 @@ export class EnemySystem implements System {
         steering.y += intentY;
 
         // 2. Neighbors (Separation & Alignment)
-        // Boss ignores neighbors usually, but lets keep separation to push little guys away
         const neighbors = state.spatialHash.query(enemy.position.x, enemy.position.y, ENEMY_SEPARATION_RADIUS * 1.5);
         
         let sepX = 0, sepY = 0;
@@ -363,13 +366,11 @@ export class EnemySystem implements System {
             }
         }
 
-        // Apply Separation
         if (enemy.variant !== EnemyVariant.Boss) {
             steering.x += sepX * 2.8;
             steering.y += sepY * 2.8;
         }
 
-        // Apply Alignment
         if (neighborCount > 0) {
             const alignLen = Math.sqrt(alignX*alignX + alignY*alignY);
             if (alignLen > 0) {
@@ -388,7 +389,6 @@ export class EnemySystem implements System {
         }
 
         // 4. Boundary Containment (Soft Force) for regular enemies
-        // Boss uses hard clamp below
         if (enemy.hasEnteredArena && enemy.variant !== EnemyVariant.Boss) {
             const margin = 80;
             const boundsStrength = 3.0;
@@ -401,8 +401,7 @@ export class EnemySystem implements System {
 
         // --- Velocity Update ---
         const steerLen = Math.sqrt(steering.x*steering.x + steering.y*steering.y);
-        let moveDirX = 0;
-        let moveDirY = 0;
+        let moveDirX = 0, moveDirY = 0;
         if (steerLen > 0) {
             moveDirX = steering.x / steerLen;
             moveDirY = steering.y / steerLen;
@@ -444,7 +443,6 @@ export class EnemySystem implements System {
             enemy.rotation = Math.atan2(enemy.velocity.y, enemy.velocity.x);
         }
         
-        // Strict Clamp for Boss to prevent leaving arena
         if (enemy.variant === EnemyVariant.Boss) {
             this.clampEnemyToBounds(enemy, state.worldWidth, state.worldHeight);
         }
@@ -453,6 +451,7 @@ export class EnemySystem implements System {
       // 3. Arena Containment & Cleanup
       const margin = enemy.radius;
       if (!enemy.hasEnteredArena) {
+          // Check if fully entered (all sides inside)
           if (enemy.position.x > margin && enemy.position.x < state.worldWidth - margin &&
               enemy.position.y > margin && enemy.position.y < state.worldHeight - margin) {
               enemy.hasEnteredArena = true;
@@ -460,12 +459,11 @@ export class EnemySystem implements System {
       }
 
       if (enemy.hasEnteredArena) {
-          if (enemy.position.x < margin) { enemy.position.x = margin; if (enemy.velocity.x < 0) enemy.velocity.x = 0; }
-          else if (enemy.position.x > state.worldWidth - margin) { enemy.position.x = state.worldWidth - margin; if (enemy.velocity.x > 0) enemy.velocity.x = 0; }
-          if (enemy.position.y < margin) { enemy.position.y = margin; if (enemy.velocity.y < 0) enemy.velocity.y = 0; }
-          else if (enemy.position.y > state.worldHeight - margin) { enemy.position.y = state.worldHeight - margin; if (enemy.velocity.y > 0) enemy.velocity.y = 0; }
+          // Hard clamp to ensure they never leave once inside
+          this.clampEnemyToBounds(enemy, state.worldWidth, state.worldHeight);
       } else {
-          const PADDING = 200;
+          // Cleanup if way out of bounds (Safety cleanup)
+          const PADDING = 300;
           if (enemy.position.x < -PADDING || enemy.position.x > state.worldWidth + PADDING ||
             enemy.position.y < -PADDING || enemy.position.y > state.worldHeight + PADDING) {
             enemy.active = false;
@@ -475,7 +473,7 @@ export class EnemySystem implements System {
   }
 
   /**
-   * Hard clamp for Boss logic. Returns true if collision with wall occurred.
+   * Hard clamp for Boss logic and general containment. Returns true if collision with wall occurred.
    */
   private clampEnemyToBounds(enemy: EnemyEntity, width: number, height: number): boolean {
       let collided = false;
@@ -517,13 +515,13 @@ export class EnemySystem implements System {
           const vx = Math.cos(angle) * speed;
           const vy = Math.sin(angle) * speed;
           
-          // Use Boss Projectile visuals
           this.spawnEnemyProjectile(state, boss.position, { x: vx, y: vy }, boss.id, true, false);
       }
   }
 
   private fireAtPlayer(state: GameState, enemy: EnemyEntity, player: PlayerEntity) {
-      const speed = 220;
+      // Increased speed for Shooters to add pressure
+      const speed = 260; // Was 220
       const dx = player.position.x - enemy.position.x;
       const dy = player.position.y - enemy.position.y;
       const dist = Math.sqrt(dx*dx + dy*dy);
@@ -554,14 +552,21 @@ export class EnemySystem implements System {
       let radius = 5;
       let color = Colors.EnemyProjectile;
       let damage = 10;
+      let shape: 'circle' | 'square' | 'diamond' | 'triangle' = 'circle';
 
       if (isBoss) {
           radius = 7;
           color = Colors.BossProjectile;
+          shape = 'circle';
       } else if (isTank) {
           radius = 12; // Large
           color = '#b91c1c'; // Dark Red
           damage = 30; // Heavy Damage
+          shape = 'square';
+      } else {
+          // Shooter
+          shape = 'diamond';
+          color = '#d946ef';
       }
 
       const projectile: ProjectileEntity = {
@@ -575,13 +580,15 @@ export class EnemySystem implements System {
           active: true,
           damage: damage, 
           lifetime: 5.0,
+          maxLifetime: 5.0,
           ownerId: ownerId,
           isEnemyProjectile: true,
           bouncesRemaining: 0,
           ricochetSearchRadius: 0,
           hitEntityIds: [],
           piercesRemaining: 0,
-          isTankShot: isTank
+          isTankShot: isTank,
+          shape: shape
       };
       
       state.entityManager.add(projectile);
@@ -660,11 +667,13 @@ export class EnemySystem implements System {
       return hash;
   }
 
-  private calculateSpawnPosition(worldWidth: number, worldHeight: number): SpawnLocation {
+  private calculateSpawnPosition(worldWidth: number, worldHeight: number, entityRadius: number): SpawnLocation {
       // Pick a random edge: 0=Top, 1=Right, 2=Bottom, 3=Left
       const edge = Math.floor(Math.random() * 4);
       let x = 0, y = 0;
-      const PADDING = 20;
+      
+      // Dynamic padding ensures even large bosses spawn fully outside
+      const PADDING = entityRadius + 15; 
 
       switch (edge) {
         case 0: // Top
@@ -688,18 +697,7 @@ export class EnemySystem implements System {
   }
 
   private spawnEnemy(state: GameState, useBurst: boolean) {
-    let x, y;
-
-    if (useBurst && this.burstLocation) {
-        // Increased jitter to 100px to prevent tight stacking
-        x = this.burstLocation.x + (Math.random() * 100 - 50);
-        y = this.burstLocation.y + (Math.random() * 100 - 50);
-    } else {
-        const loc = this.calculateSpawnPosition(state.worldWidth, state.worldHeight);
-        x = loc.x;
-        y = loc.y;
-    }
-
+    // 1. Determine Variant and Stats FIRST
     const weights = state.waveEnemyWeights;
     const rand = Math.random();
     let variant = EnemyVariant.Basic; 
@@ -730,6 +728,20 @@ export class EnemySystem implements System {
     const config = ENEMY_VARIANTS[variant];
     const radius = config ? config.radius : 14;
 
+    // 2. Determine Position (Now using correct radius for safe spawn)
+    let x, y;
+
+    if (useBurst && this.burstLocation) {
+        // Use pre-calculated burst center, add jitter
+        x = this.burstLocation.x + (Math.random() * 80 - 40);
+        y = this.burstLocation.y + (Math.random() * 80 - 40);
+    } else {
+        const loc = this.calculateSpawnPosition(state.worldWidth, state.worldHeight, radius);
+        x = loc.x;
+        y = loc.y;
+    }
+
+    // 3. Setup Stats
     const baseHealth = config ? config.health : 30;
     const baseDamage = config ? config.damage : 10;
     

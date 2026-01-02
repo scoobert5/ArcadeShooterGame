@@ -78,6 +78,11 @@ export class UpgradeSystem implements System {
     const famCount = state.purchasedFamilyCounts.get(family) || 0;
     state.purchasedFamilyCounts.set(family, famCount + 1);
 
+    // SET IDENTITY IF APPLICABLE
+    if (chain.isIdentity) {
+        player.activeIdentityId = upgradeId;
+    }
+
     // Recalculate Synergies
     this.updateSynergies(player, state);
 
@@ -91,8 +96,17 @@ export class UpgradeSystem implements System {
       // Use the new economy calculator
       const cost = calculateUpgradeCost(state, upgradeId);
 
-      // Validation
+      // Validation 1: Score
       if (state.score < cost) return false;
+
+      // Validation 2: Identity Lock
+      const chain = CHAINS.find(c => c.id === upgradeId);
+      if (chain?.isIdentity) {
+          if (state.player?.activeIdentityId && state.player.activeIdentityId !== upgradeId) {
+              // Different identity already active
+              return false;
+          }
+      }
       
       const success = this.applyUpgrade(state, upgradeId);
       if (success) {

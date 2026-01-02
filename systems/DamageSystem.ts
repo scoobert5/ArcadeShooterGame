@@ -62,6 +62,12 @@ export class DamageSystem implements System {
         } else {
              // Enemy Hazard -> Hurts Player
              if (player && player.active) {
+                
+                // IDENTITY: Phase Runner - Invulnerable Dash
+                if (player.dashInvulnerable && player.isDashing) {
+                    continue; // Skip damage check entirely
+                }
+
                 let dist = 0;
                 if (hazard.style === 'line' && hazard.from && hazard.to) {
                     dist = Vec2.distToSegment(player.position, hazard.from, hazard.to);
@@ -72,7 +78,8 @@ export class DamageSystem implements System {
                 if (dist < hazard.radius + player.radius) {
                     if (hazard.tickTimer <= 0) {
                         // Hazard damage logic
-                         if (player.currentShields > 0) {
+                         // IDENTITY: Phase Runner - Shields Disabled
+                         if (player.currentShields > 0 && !player.shieldsDisabled) {
                              this.breakShield(state, player);
                          } else if (player.invulnerabilityTimer <= 0) {
                              
@@ -127,6 +134,11 @@ export class DamageSystem implements System {
           damage *= mult;
       }
       
+      // BOSS VULNERABILITY CYCLE
+      if (enemy.variant === EnemyVariant.Boss && enemy.bossVulnIsActive) {
+          damage *= 2.0; // Double Damage during window
+      }
+      
       // SYNERGY: BULLET T7 - Crit Damage
       if (player && player.synergyBulletTier >= 7) {
           // Flat damage increase simulation of "crit damage" or actual crit logic
@@ -155,13 +167,7 @@ export class DamageSystem implements System {
       // UPGRADE: FOCUS FIRE
       if (player && player.focusFireStacks > 0) {
           if (player.focusFireTarget === enemy.id) {
-              // Same target hit, apply accumulated bonus
-              // (Stored in temporary prop on entity or just calc based on stacks? Need per-projectile logic or player state?
-              // The upgrade definition says player.focusFireStacks = damage bonus per hit.
-              // We need to track consecutive hits count.
-              // For simplicity: ProjectileSystem doesn't track specific stacks on enemy.
-              // We will just add flat bonus if target matches last hit.
-              damage += player.focusFireStacks * 5; // Simplified: Big bonus for sticking to target
+              damage += player.focusFireStacks * 5; 
           } else {
               player.focusFireTarget = enemy.id; // Switch target
           }
@@ -204,10 +210,16 @@ export class DamageSystem implements System {
 
       if (!player.active || !enemy.active) continue;
 
+      // IDENTITY: Phase Runner - Invulnerable Dash
+      if (player.dashInvulnerable && player.isDashing) {
+          continue; 
+      }
+
       if (player.invulnerabilityTimer <= 0) {
         
         // --- SHIELD LOGIC ---
-        if (player.currentShields > 0) {
+        // IDENTITY: Phase Runner - Shields Disabled check
+        if (player.currentShields > 0 && !player.shieldsDisabled) {
             this.breakShield(state, player);
             
             // Retaliation: Thorns
@@ -293,9 +305,15 @@ export class DamageSystem implements System {
         const { player, projectile } = hit;
         if (!player.active || !projectile.active) continue;
 
+        // IDENTITY: Phase Runner - Invulnerable Dash
+        if (player.dashInvulnerable && player.isDashing) {
+            continue; 
+        }
+
         if (player.invulnerabilityTimer <= 0) {
             
-            if (player.currentShields > 0) {
+            // IDENTITY: Phase Runner - Shields Disabled check
+            if (player.currentShields > 0 && !player.shieldsDisabled) {
                 this.breakShield(state, player);
                 projectile.active = false; 
                 
@@ -418,7 +436,8 @@ export class DamageSystem implements System {
 
       // UPGRADE: SIPHON
       if (state.player && state.player.shieldSiphonChance > 0) {
-          if (state.player.currentShields < state.player.maxShields) {
+          // Check shieldsDisabled
+          if (state.player.currentShields < state.player.maxShields && !state.player.shieldsDisabled) {
               if (Math.random() < state.player.shieldSiphonChance) {
                   state.player.currentShields++;
               }

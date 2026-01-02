@@ -22,6 +22,7 @@ export interface UpgradeChain {
   id: string;
   baseName: string;
   family: UpgradeFamily;
+  isIdentity?: boolean; // NEW: Marks this as a mutually exclusive Keystone upgrade
   tiers: UpgradeTier[];
 }
 
@@ -71,6 +72,66 @@ export const SYNERGY_LEVELS: Record<UpgradeFamily, SynergyMilestone[]> = {
 };
 
 export const CHAINS: UpgradeChain[] = [
+  // --- IDENTITY UPGRADES (Keystones) ---
+  {
+    id: 'ballistic_overclock',
+    baseName: 'Ballistic Overclock',
+    family: 'BULLETS',
+    isIdentity: true,
+    tiers: [
+      { 
+        suffix: 'IDENTITY', 
+        description: 'Damage +100%, Fire Rate +20%. Max HP reduced by 50%.', 
+        rarity: UpgradeRarity.Identity, 
+        apply: (p) => { 
+          p.damage *= 2.0; 
+          p.fireRate *= 0.8; 
+          p.maxHealth = Math.floor(p.maxHealth * 0.5); 
+          p.health = Math.min(p.health, p.maxHealth); 
+        } 
+      }
+    ]
+  },
+  {
+    id: 'ironclad_hull',
+    baseName: 'Ironclad Hull',
+    family: 'DEFENSE',
+    isIdentity: true,
+    tiers: [
+      { 
+        suffix: 'IDENTITY', 
+        description: 'Max HP +300. Dash is DISABLED. Speed -25%.', 
+        rarity: UpgradeRarity.Identity, 
+        apply: (p) => { 
+          p.maxHealth += 300; 
+          p.health += 300; 
+          p.dashUnlocked = false; 
+          p.maxDashCharges = 0; 
+          p.speed *= 0.75; 
+        } 
+      }
+    ]
+  },
+  {
+    id: 'phase_runner',
+    baseName: 'Phase Runner',
+    family: 'MOBILITY',
+    isIdentity: true,
+    tiers: [
+      { 
+        suffix: 'IDENTITY', 
+        description: 'Dash is Invulnerable. Shields are DISABLED.', 
+        rarity: UpgradeRarity.Identity, 
+        apply: (p) => { 
+          p.dashInvulnerable = true; 
+          p.shieldsDisabled = true; 
+          p.currentShields = 0; 
+          p.maxShields = 0; 
+        } 
+      }
+    ]
+  },
+
   // --- BULLETS FAMILY ---
   {
     id: 'focus_fire',
