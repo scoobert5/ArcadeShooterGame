@@ -89,8 +89,22 @@ export const DevConsole: React.FC<DevConsoleProps> = ({ onCommand, onClose }) =>
         return;
     }
 
+    // Command: fps on/off
+    if (cmd === 'fps on' || cmd === 'fps off') {
+        onCommand(cmd);
+        setInputValue('');
+        return;
+    }
+
+    // Command: vfx on/off
+    if (cmd === 'vfx on' || cmd === 'vfx off') {
+        onCommand(cmd);
+        setInputValue('');
+        return;
+    }
+
     // Unknown command
-    setErrorMsg(`Unknown command: "${cmd}". Try "wave_10", "givescore_5000", "giveallupgrade_bullets", "openshop", or "debug"`);
+    setErrorMsg(`Unknown command. Try: wave_X, givescore_X, fps on/off, vfx on/off`);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

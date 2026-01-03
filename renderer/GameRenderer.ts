@@ -45,7 +45,7 @@ export class GameRenderer {
     
     // --- APPLY SCREEN SHAKE ---
     this.ctx.save();
-    if (state.screenshake.intensity > 0) {
+    if (state.enableVfx && state.screenshake.intensity > 0) {
         this.ctx.translate(state.screenshake.offset.x, state.screenshake.offset.y);
     }
 
@@ -60,15 +60,17 @@ export class GameRenderer {
     }
 
     // 2. Middle Layer: Particles (From Pool)
-    this.ctx.save();
-    const particlePool = state.particlePool;
-    for (let i = 0; i < particlePool.length; i++) {
-        const p = particlePool[i];
-        if (p.active) {
-            this.drawParticle(p);
+    if (state.enableVfx) {
+        this.ctx.save();
+        const particlePool = state.particlePool;
+        for (let i = 0; i < particlePool.length; i++) {
+            const p = particlePool[i];
+            if (p.active) {
+                this.drawParticle(p);
+            }
         }
+        this.ctx.restore();
     }
-    this.ctx.restore();
 
     // 3. Player Projectiles (Batched & Pooled)
     this.drawPlayerProjectiles(state);
@@ -80,13 +82,15 @@ export class GameRenderer {
     }
     
     // 5. JUICE LAYER: Damage Numbers
-    for (const dn of state.damageNumbers) {
-        this.drawDamageNumber(dn);
+    if (state.enableVfx) {
+        for (const dn of state.damageNumbers) {
+            this.drawDamageNumber(dn);
+        }
     }
     
     // Render Player Ability UI (Overlay on top of player)
     if (state.player && state.player.active) {
-        this.drawPlayerAbilityUI(state.player);
+        this.drawPlayerAbilityUI(state.player, state);
     }
 
     // Restore shake transform
@@ -98,7 +102,7 @@ export class GameRenderer {
     }
     
     // Player Hit Flash Overlay
-    if (state.player && state.player.hitFlashTimer && state.player.hitFlashTimer > 0) {
+    if (state.enableVfx && state.player && state.player.hitFlashTimer && state.player.hitFlashTimer > 0) {
         this.ctx.fillStyle = `rgba(220, 38, 38, ${Math.min(0.4, state.player.hitFlashTimer * 2)})`;
         this.ctx.fillRect(0, 0, this.width, this.height);
     }
@@ -123,14 +127,6 @@ export class GameRenderer {
           // Optimization: Draw standard colored ones in one go.
           if (p.isVulnerabilityShot) continue; // Skip special ones for next pass
 
-          // Draw Trail (Only if LOD permits, and recently spawned to avoid clutter)
-          if (!useLOD || (p.age && p.age < 0.5)) {
-              if (p.trail && p.trail.length > 0) {
-                  // Trails must be drawn stroked, so break path for fill?
-                  // No, we can draw trails in a separate pass.
-              }
-          }
-
           // Draw Dot
           this.ctx.moveTo(p.position.x + p.radius, p.position.y);
           this.ctx.arc(p.position.x, p.position.y, p.radius, 0, Math.PI * 2);
@@ -148,8 +144,8 @@ export class GameRenderer {
       }
       this.ctx.fill();
 
-      // Batch 3: Trails (Vector) - Only if not heavy load
-      if (!useLOD) {
+      // Batch 3: Trails (Vector) - Only if not heavy load AND VFX enabled
+      if (state.enableVfx && !useLOD) {
           this.ctx.beginPath();
           this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
           this.ctx.lineWidth = 1; // Thinner for perf
@@ -495,7 +491,7 @@ export class GameRenderer {
     this.ctx.restore();
   }
 
-  private drawPlayerAbilityUI(player: PlayerEntity) {
+  private drawPlayerAbilityUI(player: PlayerEntity, state: GameState) {
       // Calculate position WITH recoil
       // The calling function render() has already restored context, so we are in world space
       // We must manually apply the recoil offset here to sync UI
@@ -615,7 +611,7 @@ export class GameRenderer {
         }
       }
 
-      if (player.repulseVisualTimer > 0) {
+      if (state.enableVfx && player.repulseVisualTimer > 0) {
           const t = 1 - (player.repulseVisualTimer / 0.3); 
           const maxPulseRadius = 180;
           const currentRadius = player.radius + (maxPulseRadius - player.radius) * t;

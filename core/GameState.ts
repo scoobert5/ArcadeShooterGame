@@ -76,7 +76,16 @@ export class GameState {
   worldWidth: number;
   worldHeight: number;
   gameTime: number; // Monotonically increasing game time (seconds)
-  currentFps: number = 60; // Approximate FPS for debug
+  
+  // Performance & Debug
+  debugMode: boolean = false; 
+  showFps: boolean = false;
+  enableVfx: boolean = true;
+  
+  // Rolling FPS Calculation
+  fpsRollingAverage: number = 60;
+  private fpsAccumulator: number = 0;
+  private fpsFrames: number = 0;
 
   score: number;
   highScore: number;
@@ -114,8 +123,6 @@ export class GameState {
   
   player: PlayerEntity | null = null; 
   isPlayerAlive: boolean;
-
-  debugMode: boolean = false; 
 
   // --- JUICE STATE ---
   screenshake: {
@@ -265,6 +272,7 @@ export class GameState {
   reset() {
     this.entityManager.clear();
     this.spatialHash.clear();
+    this.clearProjectiles(); // Cleanup projectiles
     this.status = GameStatus.Playing;
     this.previousStatus = GameStatus.Playing;
     this.gameTime = 0;
@@ -308,11 +316,7 @@ export class GameState {
     for (const p of this.particlePool) {
         p.active = false;
     }
-    // Clear projectiles
-    for (const p of this.playerProjectilePool) {
-        p.active = false;
-    }
-    this.playerProjectileHead = 0;
+    
     this.activePlayerProjectileCount = 0;
     this.activeParticleCount = 0;
     
@@ -335,6 +339,15 @@ export class GameState {
   }
 
   updateVfxTimers(dt: number) {
+      // Logic for rolling FPS
+      this.fpsAccumulator += dt;
+      this.fpsFrames++;
+      if (this.fpsAccumulator >= 0.5) { // Update every 0.5s
+          this.fpsRollingAverage = Math.round(this.fpsFrames / this.fpsAccumulator);
+          this.fpsAccumulator = 0;
+          this.fpsFrames = 0;
+      }
+
       this.vfxState.secondTimer += dt;
       if (this.vfxState.secondTimer >= 1.0) {
           this.vfxState.secondTimer = 0;
@@ -342,7 +355,18 @@ export class GameState {
       }
   }
 
+  clearProjectiles() {
+      for (const p of this.playerProjectilePool) {
+          p.active = false;
+          p.age = 0;
+      }
+      this.activePlayerProjectileCount = 0;
+      this.playerProjectileHead = 0;
+  }
+
   spawnParticle(def: ParticleDef) {
+      if (!this.enableVfx) return; // Toggle Switch
+
       // 1. Budget Check
       if (this.vfxState.particlesSpawnedThisFrame >= VFX_BUDGET_PARTICLES_PER_FRAME) return;
 
@@ -405,7 +429,7 @@ export class GameState {
       
       // Internal
       p.age = 0;
-      // OPTIMIZATION: Reuse existing array instead of allocating new one
+      // Reuse existing array instead of allocating new one
       if (p.hitEntityIds) {
           p.hitEntityIds.length = 0;
       } else {
@@ -423,6 +447,7 @@ export class GameState {
   }
 
   addShake(intensity: number) {
+      if (!this.enableVfx) return; // Toggle Switch
       const MAX_SHAKE = 25;
       this.screenshake.intensity = Math.min(MAX_SHAKE, this.screenshake.intensity + intensity);
       this.screenshake.decay = 8.0; 

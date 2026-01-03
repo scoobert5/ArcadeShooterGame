@@ -69,6 +69,8 @@ export class ProjectileSystem implements System {
       p.age = (p.age || 0) + dt;
 
       // TRAIL UPDATE (Ring Buffer)
+      // We still update logic so visuals are correct if VFX toggled back on, 
+      // but rendering is skipped in Renderer if off.
       const head = p.trailHead;
       p.trail[head].x = p.position.x;
       p.trail[head].y = p.position.y;
@@ -152,6 +154,8 @@ export class ProjectileSystem implements System {
   }
 
   private spawnImpactParticle(state: GameState, pos: {x: number, y: number}, color: string) {
+      if (!state.enableVfx) return; // Toggle Switch
+
       // Burst of small particles via pool
       for(let i=0; i<3; i++) {
           const vx = (Math.random()-0.5)*150;

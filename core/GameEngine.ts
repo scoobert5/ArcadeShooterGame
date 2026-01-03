@@ -120,7 +120,7 @@ export class GameEngine {
   }
 
   private resetRunState() {
-    this.state.reset();
+    this.state.reset(); // This already clears projectiles
     this.inputManager.resetAll();
     this.lastEnemiesRemaining = -1;
     this.lastPlayerHealth = BALANCE.PLAYER.BASE_HP;
@@ -318,6 +318,7 @@ export class GameEngine {
 
   jumpToWave(targetWave: number) {
       if (targetWave < 1) return;
+      this.state.clearProjectiles(); // CLEANUP
       this.state.entityManager.removeByType(EntityType.Enemy);
       this.state.entityManager.removeByType(EntityType.Projectile);
       // Remove Hazards but NOT Particles (managed by pool now)
@@ -387,13 +388,21 @@ export class GameEngine {
       this.state.status = GameStatus.WaveIntro;
       this.state.waveIntroTimer = 3.0;
       this.state.waveActive = false;
-      this.inputManager.resetAll(); 
+      this.inputManager.resetAll();
+      this.state.clearProjectiles(); // CLEANUP OLD PROJECTILES 
+      
       if (this.state.player) {
           this.state.player.wantsToFire = false;
           this.state.player.burstQueue = 0;
           this.state.player.currentAmmo = this.state.player.maxAmmo;
           this.state.player.isReloading = false;
           this.state.player.reloadTimer = 0;
+          
+          // FORCE CENTER POSITION
+          this.state.player.position.x = this.state.worldWidth / 2;
+          this.state.player.position.y = this.state.worldHeight / 2;
+          this.state.player.velocity = { x: 0, y: 0 };
+          this.state.player.recoil = { x: 0, y: 0 };
           
           // META PERK HOOK: Wave Start
           if (this.state.metaState.equippedStartingPerk) {
@@ -428,8 +437,6 @@ export class GameEngine {
     
     // 0. Update Game Time & Performance Counters
     this.state.gameTime += dt;
-    this.state.currentFps = dt > 0 ? 1 / dt : 60;
-    
     this.state.resetFrameStats();
     this.state.updateVfxTimers(dt);
 
@@ -619,8 +626,8 @@ export class GameEngine {
     if (this.state.waveCleared) {
         this.state.entityManager.removeByType(EntityType.Projectile);
         this.state.entityManager.removeByType(EntityType.Hazard);
-        // Particles persist to look nice
-
+        this.state.clearProjectiles(); // CLEANUP
+        
         // HOOK: Wave Clear
         if (this.state.player && perkId) {
             this.metaProgressionSystem.onWaveClear(this.state, this.state.player, perkId);

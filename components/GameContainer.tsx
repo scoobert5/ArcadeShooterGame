@@ -91,9 +91,9 @@ export const GameContainer: React.FC = () => {
             });
         }
         
-        if (engine.state.debugMode) {
+        if (engine.state.showFps || engine.state.debugMode) {
             setDebugStats({
-                fps: Math.round(engine.state.currentFps),
+                fps: engine.state.fpsRollingAverage,
                 projectiles: engine.state.activePlayerProjectileCount,
                 particles: engine.state.activeParticleCount,
                 spawns: engine.state.vfxState.particlesSpawnedThisFrame,
@@ -104,7 +104,7 @@ export const GameContainer: React.FC = () => {
         } else if (debugStats !== null) {
             setDebugStats(null);
         }
-    }, 100);
+    }, 250); // Slow down poll to 4Hz for UI
 
     engine.on('score_change', handleScore);
     engine.on('status_change', handleStatusChange);
@@ -217,6 +217,18 @@ export const GameContainer: React.FC = () => {
       else if (lowerCmd === 'debug') {
           engine.state.debugMode = !engine.state.debugMode;
       }
+      else if (lowerCmd === 'fps on') {
+          engine.state.showFps = true;
+      }
+      else if (lowerCmd === 'fps off') {
+          engine.state.showFps = false;
+      }
+      else if (lowerCmd === 'vfx on') {
+          engine.state.enableVfx = true;
+      }
+      else if (lowerCmd === 'vfx off') {
+          engine.state.enableVfx = false;
+      }
   };
 
   const handleConsoleClose = () => {
@@ -250,15 +262,16 @@ export const GameContainer: React.FC = () => {
           <BossHealthBar current={bossHealth.current} max={bossHealth.max} active={bossHealth.active} />
           
           {debugStats && (
-              <div className="absolute bottom-2 left-2 text-green-400 font-mono text-xs z-50 bg-black/50 p-2 rounded pointer-events-none">
-                  [DEBUG PERFORMANCE]<br/>
-                  FPS: {debugStats.fps}<br/>
-                  Player Proj: {debugStats.projectiles}<br/>
-                  Active Particles: {debugStats.particles}<br/>
-                  Particles/Frame: {debugStats.spawns}<br/>
-                  Hits/Frame: {debugStats.hits}<br/>
-                  Death Burst/Sec: {debugStats.deaths}<br/>
-                  Enemies: {debugStats.enemies}
+              <div className="absolute bottom-2 left-2 text-green-400 font-mono text-xs z-50 bg-black/80 border border-slate-700 p-3 rounded pointer-events-none shadow-lg">
+                  <div className="font-bold text-white mb-1 border-b border-slate-700 pb-1">PERFORMANCE MONITOR</div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                      <span>FPS:</span> <span className={debugStats.fps < 50 ? 'text-red-400' : 'text-green-400'}>{debugStats.fps}</span>
+                      <span>VFX:</span> <span className={engine.state.enableVfx ? 'text-green-400' : 'text-red-400'}>{engine.state.enableVfx ? 'ON' : 'OFF'}</span>
+                      <span>Projectiles:</span> <span>{debugStats.projectiles}</span>
+                      <span>Particles:</span> <span>{debugStats.particles}</span>
+                      <span>Hits/Frame:</span> <span>{debugStats.hits}</span>
+                      <span>Enemies:</span> <span>{debugStats.enemies}</span>
+                  </div>
               </div>
           )}
         </>

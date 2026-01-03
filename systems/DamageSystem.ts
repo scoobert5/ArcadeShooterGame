@@ -220,6 +220,10 @@ export class DamageSystem implements System {
       if (projectile.piercesRemaining > 0) {
           projectile.piercesRemaining--;
       } else if (projectile.bouncesRemaining > 0) {
+          // IMPORTANT: Check exclusion array consistency for safety before recursive-like calls
+          if (!projectile.hitEntityIds.includes(enemy.id)) {
+              projectile.hitEntityIds.push(enemy.id);
+          }
           this.handleRicochet(state, projectile, enemy);
           projectile.active = false; 
       } else {
@@ -496,9 +500,7 @@ export class DamageSystem implements System {
       let currentDamage = projectile.damage;
       let bounces = projectile.bouncesRemaining;
       
-      // OPTIMIZATION: Do NOT allocate a new array here.
-      // projectile.hitEntityIds has already tracked history.
-      // Since this is an instant chain, we will push subsequent hits to it directly.
+      if (state.debugMode) console.log(`Ricochet start: bounces=${bounces}`);
 
       while (bounces > 0) {
           const candidates = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
@@ -530,7 +532,10 @@ export class DamageSystem implements System {
               }
           }
 
-          if (!closest) break;
+          if (!closest) {
+              if (state.debugMode) console.log("Ricochet end: no target found");
+              break;
+          }
 
           const decayFactor = 0.8;
           currentDamage = Math.ceil(currentDamage * decayFactor);
@@ -572,6 +577,7 @@ export class DamageSystem implements System {
   }
 
   private spawnDamageNumber(state: GameState, pos: Vector2, amount: number, isCrit: boolean) {
+      if (!state.enableVfx) return; // Toggle Switch
       state.damageNumbers.push({
           id: `dmg_${Date.now()}_${Math.random()}`,
           value: amount,
@@ -586,6 +592,8 @@ export class DamageSystem implements System {
   }
 
   private spawnImpactParticles(state: GameState, enemy: EnemyEntity | null, pos: Vector2, color: string) {
+      if (!state.enableVfx) return; // Toggle Switch
+
       // 1. Throttling per Enemy
       if (enemy) {
           const now = state.gameTime;
@@ -627,6 +635,8 @@ export class DamageSystem implements System {
   }
 
   private spawnExplosion(state: GameState, pos: Vector2, size: number, color: string, fullDetail: boolean) {
+      if (!state.enableVfx) return; // Toggle Switch
+
       // Main Expanding Circle
       state.spawnParticle({
           style: 'explosion',
