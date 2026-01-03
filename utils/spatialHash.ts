@@ -1,8 +1,10 @@
+
 import { GameEntity } from '../entities/types';
 
 export class SpatialHashGrid {
   private cellSize: number;
-  private grid: Map<string, GameEntity[]>;
+  private grid: Map<number, GameEntity[]>;
+  private currentQueryId: number = 0;
 
   constructor(cellSize: number) {
     this.cellSize = cellSize;
@@ -14,6 +16,15 @@ export class SpatialHashGrid {
    */
   clear() {
     this.grid.clear();
+  }
+
+  /**
+   * Generates a unique integer key for a cell coordinate.
+   * Assumes coordinates fit within 16-bit signed integers (-32768 to 32767).
+   * Since grid cells are large (64px), this supports a world size of ~4 million pixels, plenty.
+   */
+  private getKey(x: number, y: number): number {
+    return (x & 0xFFFF) | ((y & 0xFFFF) << 16);
   }
 
   /**
@@ -31,21 +42,24 @@ export class SpatialHashGrid {
 
     for (let cx = startX; cx <= endX; cx++) {
       for (let cy = startY; cy <= endY; cy++) {
-        const key = `${cx},${cy}`;
-        if (!this.grid.has(key)) {
-          this.grid.set(key, []);
+        const key = this.getKey(cx, cy);
+        let cell = this.grid.get(key);
+        if (!cell) {
+          cell = [];
+          this.grid.set(key, cell);
         }
-        this.grid.get(key)!.push(entity);
+        cell.push(entity);
       }
     }
   }
 
   /**
    * Returns potential candidates for collision near the given position and radius.
-   * Returns a deduplicated Set of entities.
+   * Appends candidates to the provided results array.
+   * Uses internal _queryId on entities to prevent duplicates without creating a Set.
    */
-  query(x: number, y: number, radius: number): Set<GameEntity> {
-    const candidates = new Set<GameEntity>();
+  query(x: number, y: number, radius: number, results: GameEntity[]) {
+    this.currentQueryId++;
     
     const startX = Math.floor((x - radius) / this.cellSize);
     const endX = Math.floor((x + radius) / this.cellSize);
@@ -54,16 +68,18 @@ export class SpatialHashGrid {
 
     for (let cx = startX; cx <= endX; cx++) {
       for (let cy = startY; cy <= endY; cy++) {
-        const key = `${cx},${cy}`;
+        const key = this.getKey(cx, cy);
         const cell = this.grid.get(key);
         if (cell) {
-          for (const entity of cell) {
-            candidates.add(entity);
+          for (let i = 0; i < cell.length; i++) {
+            const entity = cell[i];
+            if (entity._queryId !== this.currentQueryId) {
+              entity._queryId = this.currentQueryId;
+              results.push(entity);
+            }
           }
         }
       }
     }
-
-    return candidates;
   }
 }

@@ -76,6 +76,7 @@ export class GameState {
   worldWidth: number;
   worldHeight: number;
   gameTime: number; // Monotonically increasing game time (seconds)
+  currentFps: number = 60; // Approximate FPS for debug
 
   score: number;
   highScore: number;

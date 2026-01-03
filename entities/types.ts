@@ -39,6 +39,9 @@ export interface BaseEntity {
   color: string;
   active: boolean; 
   hitFlashTimer?: number; 
+  
+  // Performance Optimization: Internal use for SpatialHash deduplication
+  _queryId?: number;
 }
 
 export interface PlayerEntity extends BaseEntity {

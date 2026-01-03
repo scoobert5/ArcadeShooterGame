@@ -1,7 +1,7 @@
 
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
-import { EntityType, EnemyEntity, EnemyVariant, HazardEntity, ProjectileEntity, PlayerEntity } from '../entities/types';
+import { EntityType, EnemyEntity, EnemyVariant, HazardEntity, ProjectileEntity, PlayerEntity, GameEntity } from '../entities/types';
 import { 
   ENEMY_SEPARATION_RADIUS,
   ENEMY_VARIANTS,
@@ -21,6 +21,9 @@ export class EnemySystem implements System {
   // Burst Spawn State
   private burstRemaining = 0;
   private burstLocation: SpawnLocation | null = null;
+  
+  // Reusable array for steering queries
+  private steeringNeighbors: GameEntity[] = [];
 
   update(dt: number, state: GameState) {
     const player = state.player;
@@ -97,7 +100,7 @@ export class EnemySystem implements System {
       if (enemy.variant === EnemyVariant.Tank && player) {
           if (enemy.shootTimer === undefined) enemy.shootTimer = 3.0; 
 
-          const distToPlayer = Vec2.dist(enemy.position, player.position);
+          const distToPlayerSq = Vec2.distSq(enemy.position, player.position);
           if (enemy.hasEnteredArena && enemy.shootTimer <= 0) {
               this.fireTankShot(state, enemy, player);
               enemy.shootTimer = 3.5 + Math.random() * 1.5; 
@@ -108,8 +111,8 @@ export class EnemySystem implements System {
       if (enemy.variant === EnemyVariant.Shooter && player) {
           if (enemy.shootTimer === undefined) enemy.shootTimer = 1.0; 
 
-          const distToPlayer = Vec2.dist(enemy.position, player.position);
-          if (enemy.hasEnteredArena && distToPlayer < 500 && enemy.shootTimer <= 0) {
+          const distToPlayerSq = Vec2.distSq(enemy.position, player.position);
+          if (enemy.hasEnteredArena && distToPlayerSq < 500 * 500 && enemy.shootTimer <= 0) {
               this.fireAtPlayer(state, enemy, player);
               enemy.shootTimer = 0.8 + Math.random(); 
           }
@@ -150,10 +153,10 @@ export class EnemySystem implements System {
               if (enemy.aiStateTimer <= 0) {
                   if (enemy.aiState === 'approach' || enemy.aiState === 'anchor') {
                       if (enemy.attackCooldown <= 0 && player) {
-                          const dist = Vec2.dist(enemy.position, player.position);
+                          const distSq = Vec2.distSq(enemy.position, player.position);
                           const rand = Math.random();
 
-                          if (dist < 250) {
+                          if (distSq < 250 * 250) {
                               if (rand < 0.7) {
                                   enemy.aiState = 'telegraph_slam';
                                   enemy.aiStateTimer = 0.8;
@@ -287,7 +290,8 @@ export class EnemySystem implements System {
         // --- Standard Steering ---
         const dx = player.position.x - enemy.position.x;
         const dy = player.position.y - enemy.position.y;
-        const distToPlayer = Math.sqrt(dx * dx + dy * dy);
+        const distToPlayerSq = dx * dx + dy * dy;
+        const distToPlayer = Math.sqrt(distToPlayerSq);
         
         let dirX = 0, dirY = 0;
         if (distToPlayer > 0) { dirX = dx / distToPlayer; dirY = dy / distToPlayer; }
@@ -308,13 +312,15 @@ export class EnemySystem implements System {
         steering.x += intentX;
         steering.y += intentY;
 
-        const neighbors = state.spatialHash.query(enemy.position.x, enemy.position.y, ENEMY_SEPARATION_RADIUS * 1.5);
+        // Query spatial hash using reusable array
+        this.steeringNeighbors.length = 0;
+        state.spatialHash.query(enemy.position.x, enemy.position.y, ENEMY_SEPARATION_RADIUS * 1.5, this.steeringNeighbors);
         
         let sepX = 0, sepY = 0;
         let alignX = 0, alignY = 0;
         let neighborCount = 0;
 
-        for (const other of neighbors) {
+        for (const other of this.steeringNeighbors) {
             if (other.id === enemy.id || other.type !== EntityType.Enemy) continue;
             const o = other as EnemyEntity; 
 
@@ -435,6 +441,7 @@ export class EnemySystem implements System {
     }
   }
 
+  // ... rest of file unchanged ...
   private clampEnemyToBounds(enemy: EnemyEntity, width: number, height: number): boolean {
       let collided = false;
       const r = enemy.radius;
@@ -562,9 +569,9 @@ export class EnemySystem implements System {
       if (!state.player || !state.player.active) return;
       
       const SLAM_RADIUS = 280; 
-      const dist = Vec2.dist(boss.position, state.player.position);
+      const distSq = Vec2.distSq(boss.position, state.player.position);
       
-      if (dist < SLAM_RADIUS) {
+      if (distSq < SLAM_RADIUS * SLAM_RADIUS) {
           if (state.player.invulnerabilityTimer <= 0) {
               const rawDamage = boss.damage * 1.5; 
               const mitigation = state.player.damageReduction || 0;

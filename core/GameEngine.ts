@@ -428,6 +428,8 @@ export class GameEngine {
     
     // 0. Update Game Time & Performance Counters
     this.state.gameTime += dt;
+    this.state.currentFps = dt > 0 ? 1 / dt : 60;
+    
     this.state.resetFrameStats();
     this.state.updateVfxTimers(dt);
 
