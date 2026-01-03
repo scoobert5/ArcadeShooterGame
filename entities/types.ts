@@ -1,3 +1,4 @@
+
 import { Vector2 } from '../utils/math';
 
 export enum EntityType {
@@ -49,6 +50,9 @@ export interface PlayerEntity extends BaseEntity {
   wantsToFire: boolean; // Input state for firing intent
   invulnerabilityTimer: number; // Time in seconds until player can take damage again
   
+  // VISUALS
+  recoil: Vector2; // Visual backward displacement when firing
+
   // Reload & Ammo
   currentAmmo: number;
   maxAmmo: number;
@@ -193,6 +197,9 @@ export interface EnemyEntity extends BaseEntity {
   
   // Physics
   knockback: Vector2; // Separate vector for attack impulse forces (decays over time)
+  
+  // Visuals
+  wobble: number; // Rotational shake intensity
 
   // AI Behavior State
   aiState: BossAiState; 
@@ -247,7 +254,7 @@ export interface ProjectileEntity extends BaseEntity {
 
 export interface ParticleEntity extends BaseEntity {
   type: EntityType.Particle;
-  style: 'ricochet_trail';
+  style: 'ricochet_trail' | 'spark' | 'impact' | 'muzzle' | 'explosion';
   from: Vector2;
   to: Vector2;
   lifetime: number;
@@ -265,6 +272,19 @@ export interface HazardEntity extends BaseEntity {
     style?: 'circle' | 'line'; // Visual style
     from?: Vector2; // Start point for line style
     to?: Vector2;   // End point for line style
+}
+
+// JUICE TYPES
+export interface DamageNumber {
+    id: string;
+    value: number;
+    position: Vector2;
+    velocity: Vector2;
+    life: number;
+    maxLife: number;
+    color: string;
+    scale: number;
+    isCritical?: boolean;
 }
 
 export type GameEntity = PlayerEntity | EnemyEntity | ProjectileEntity | ParticleEntity | HazardEntity;

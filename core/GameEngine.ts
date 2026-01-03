@@ -1,3 +1,4 @@
+
 import { GameState, GameStatus } from './GameState';
 import { Loop } from './Loop';
 import { InputManager } from './InputManager';
@@ -143,6 +144,10 @@ export class GameEngine {
       wantsToFire: false,
       invulnerabilityTimer: 0,
       hitFlashTimer: 0,
+      
+      // VISUALS
+      recoil: { x: 0, y: 0 },
+
       currentAmmo: BALANCE.PLAYER.BASE_AMMO,
       maxAmmo: BALANCE.PLAYER.BASE_AMMO,
       isReloading: false,
@@ -380,6 +385,7 @@ export class GameEngine {
               this.metaProgressionSystem.onWaveStart(this.state.player, this.state.metaState.equippedStartingPerk);
           }
       }
+      
       this.emit('status_change', this.state.status);
       this.emit('wave_change', this.state.wave);
       this.emit('wave_intro_timer', 3);
@@ -405,6 +411,41 @@ export class GameEngine {
   private update(dt: number) {
     const input = this.inputManager.getState();
     
+    // 2. Update Screenshake (Always runs, even in pause/hitstop to decay)
+    if (this.state.screenshake.intensity > 0) {
+        const { intensity, decay } = this.state.screenshake;
+        // Random offset based on intensity
+        this.state.screenshake.offset.x = (Math.random() - 0.5) * intensity;
+        this.state.screenshake.offset.y = (Math.random() - 0.5) * intensity;
+        
+        // Decay
+        this.state.screenshake.intensity = Math.max(0, intensity - (dt * decay * 60));
+    } else {
+        this.state.screenshake.offset.x = 0;
+        this.state.screenshake.offset.y = 0;
+    }
+
+    // 3. Update Damage Numbers (Visuals update independent of hitstop)
+    for (let i = this.state.damageNumbers.length - 1; i >= 0; i--) {
+        const dn = this.state.damageNumbers[i];
+        dn.life -= dt;
+        if (dn.life <= 0) {
+            this.state.damageNumbers.splice(i, 1);
+        } else {
+            dn.position.x += dn.velocity.x * dt;
+            dn.position.y += dn.velocity.y * dt;
+            dn.velocity.y += 100 * dt; // Gravity
+        }
+    }
+
+    // --- HIT STOP CHECK ---
+    // If HitStop is active, we skip the physics update but keep rendering/UI events
+    if (this.state.hitStopTimer > 0) {
+        this.state.hitStopTimer -= dt;
+        if (this.state.hitStopTimer < 0) this.state.hitStopTimer = 0;
+        return; 
+    }
+
     if (this.state.status !== GameStatus.DevConsole) {
         if (input.escape && !this.wasEscapePressed) {
           this.togglePause();
@@ -455,13 +496,6 @@ export class GameEngine {
         if (this.metaProgressionSystem.shouldApplyHazardSlow(player, perkId)) {
             // Check if Slowed
             if (player.speedMultiplier < 1.0) {
-                // If seals exist, we need to know if we are IN a hazard.
-                // Assuming PlayerSystem set < 1.0 because of hazard.
-                // We will forcefully reset it if seals > 0 and then consume a seal.
-                // But we need to know if it's a NEW contact.
-                // Simplified: If speedMultiplier < 1.0 and seals > 0 and cooldown <= 0:
-                //   Restore speed, consume seal, set cooldown.
-                // Re-implementation: Check overlaps manually.
                 const hazards = this.state.entityManager.getByType(EntityType.Hazard) as HazardEntity[];
                 let inHazard = false;
                 for (const h of hazards) {
@@ -496,9 +530,6 @@ export class GameEngine {
     }
     
     // HOOK: Damage Interception (Armor Plating / Scrap Injector)
-    // If health dropped, we might want to refund some if a perk blocked it.
-    // NOTE: DamageSystem modifies health directly. We have to react post-facto or modify DamageSystem.
-    // Since we cannot modify DamageSystem, we check the delta.
     if (player && player.active && perkId) {
         const hpAfter = player.health;
         const damageTaken = hpBefore - hpAfter;

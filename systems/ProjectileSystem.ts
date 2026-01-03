@@ -1,3 +1,4 @@
+
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
 import { EntityType, ProjectileEntity, ParticleEntity, PlayerEntity } from '../entities/types';
@@ -81,6 +82,8 @@ export class ProjectileSystem implements System {
         p.position.y > state.worldHeight
       ) {
           p.active = false;
+          // Impact Particle on Wall
+          this.spawnImpactParticle(state, p.position, p.color);
       }
     }
 
@@ -133,12 +136,46 @@ export class ProjectileSystem implements System {
       }
   }
 
+  private spawnImpactParticle(state: GameState, pos: {x: number, y: number}, color: string) {
+      // Burst of small particles
+      for(let i=0; i<3; i++) {
+          const particle: ParticleEntity = {
+              id: `imp_${Date.now()}_${Math.random()}`,
+              type: EntityType.Particle,
+              style: 'spark',
+              position: { ...pos },
+              velocity: { x: (Math.random()-0.5)*150, y: (Math.random()-0.5)*150 },
+              radius: 2,
+              rotation: Math.random() * Math.PI * 2,
+              color: color,
+              active: true,
+              from: { ...pos },
+              to: { ...pos },
+              lifetime: 0.2 + Math.random() * 0.1,
+              maxLifetime: 0.3,
+              width: 0
+          };
+          state.entityManager.add(particle);
+      }
+  }
+
   // Fires one set of projectiles (one per stream)
   private fireVolley(state: GameState, player: PlayerEntity) {
       if (player.currentAmmo <= 0) return;
       
       player.currentAmmo--;
       
+      // Screen Shake (Firing Kick)
+      state.screenshake.intensity += 1.5;
+      state.screenshake.decay = 0.5;
+
+      // Visual Recoil Impulse
+      // Push back relative to aim
+      const aimX = Math.cos(player.rotation);
+      const aimY = Math.sin(player.rotation);
+      player.recoil.x -= aimX * 4.0;
+      player.recoil.y -= aimY * 4.0;
+
       // Update Shots Fired Counter (For Bullet Synergy T2)
       player.shotsFired++;
       

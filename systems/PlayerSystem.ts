@@ -1,3 +1,4 @@
+
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
 import { InputState } from '../core/InputManager';
@@ -20,6 +21,12 @@ export class PlayerSystem implements System {
     if (player.repulseCooldown > 0) player.repulseCooldown -= dt;
     if (player.repulseVisualTimer > 0) player.repulseVisualTimer -= dt;
     
+    // Decay Recoil (Visual Spring)
+    player.recoil.x *= 0.8;
+    player.recoil.y *= 0.8;
+    if (Math.abs(player.recoil.x) < 0.1) player.recoil.x = 0;
+    if (Math.abs(player.recoil.y) < 0.1) player.recoil.y = 0;
+
     // Post-Dash Buff Timer
     if (player.postDashTimer > 0) player.postDashTimer -= dt;
 
@@ -286,7 +293,7 @@ export class PlayerSystem implements System {
         // Activate Ability
         player.repulseCooldown = player.maxRepulseCooldown;
         player.repulseVisualTimer = 0.3; // 300ms visual pulse
-
+        
         // Find enemies in radius
         const enemies = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
         const PULSE_RADIUS = 180;
@@ -331,14 +338,25 @@ export class PlayerSystem implements System {
                 if (damage > 0) {
                     enemy.health -= damage;
                     enemy.hitFlashTimer = 0.1;
+                    // Visual Impact for Pulse
+                    enemy.wobble = 0.5; // Strong shake
                     
                     if (enemy.health <= 0) {
                         enemy.active = false;
                         state.score += enemy.value;
+                        // Add meta rewards handled by damage system death logic usually, 
+                        // but here we might miss it if DamageSystem handles it.
+                        // Ideally DamageSystem handles all death.
+                        // Let's defer actual death handling to next frame or force it here properly?
+                        // For now, simple score add.
                     }
                 }
             }
         }
+        
+        // Trigger Screen Shake for Pulse
+        state.screenshake.intensity = 5;
+        state.screenshake.decay = 0.2;
     }
   }
 }

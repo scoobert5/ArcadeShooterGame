@@ -1,3 +1,4 @@
+
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
 import { EntityType, EnemyEntity, EnemyVariant, HazardEntity, ProjectileEntity, PlayerEntity } from '../entities/types';
@@ -76,6 +77,13 @@ export class EnemySystem implements System {
       // Decrement visual flash timer
       if (enemy.hitFlashTimer && enemy.hitFlashTimer > 0) {
         enemy.hitFlashTimer -= dt;
+      }
+      
+      // Decay Wobble (Visual Recoil)
+      if (enemy.wobble !== 0) {
+          // Simple damped spring or exponential decay
+          enemy.wobble *= 0.9;
+          if (Math.abs(enemy.wobble) < 0.01) enemy.wobble = 0;
       }
       
       // Decrement AI State Timer
@@ -776,6 +784,10 @@ export class EnemySystem implements System {
       damage: Math.ceil(baseDamage * finalDmgMult),
       value: config ? config.value : 100,
       hitFlashTimer: 0,
+      
+      // VISUALS
+      wobble: 0,
+
       aiState: 'approach',
       aiStateTimer: 1.0 + Math.random() * 2.0, 
       orbitDir: Math.random() < 0.5 ? 1 : -1,

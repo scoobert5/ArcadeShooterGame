@@ -1,6 +1,7 @@
+
 import { GameState, GameStatus } from '../core/GameState';
 import { Colors } from '../utils/constants';
-import { EntityType, EnemyEntity, EnemyVariant, PlayerEntity, ProjectileEntity, ParticleEntity, HazardEntity } from '../entities/types';
+import { EntityType, EnemyEntity, EnemyVariant, PlayerEntity, ProjectileEntity, ParticleEntity, HazardEntity, DamageNumber } from '../entities/types';
 
 /**
  * Handles all canvas drawing operations.
@@ -48,6 +49,12 @@ export class GameRenderer {
        // This might happen for one frame during resize, generally acceptable
     }
 
+    // --- APPLY SCREEN SHAKE ---
+    this.ctx.save();
+    if (state.screenshake.intensity > 0) {
+        this.ctx.translate(state.screenshake.offset.x, state.screenshake.offset.y);
+    }
+
     // Render all active entities
     const entities = state.entityManager.getAll();
     
@@ -77,10 +84,18 @@ export class GameRenderer {
       this.drawEntity(entity);
     }
     
+    // 4. JUICE LAYER: Damage Numbers
+    for (const dn of state.damageNumbers) {
+        this.drawDamageNumber(dn);
+    }
+    
     // Render Player Ability UI (Overlay on top of player)
     if (state.player && state.player.active) {
         this.drawPlayerAbilityUI(state.player);
     }
+
+    // Restore shake transform
+    this.ctx.restore();
 
     // Visual overlay for paused state handled here (simple primitive)
     if (state.status === GameStatus.Paused) {
@@ -92,6 +107,24 @@ export class GameRenderer {
         this.ctx.fillStyle = `rgba(220, 38, 38, ${Math.min(0.4, state.player.hitFlashTimer * 2)})`;
         this.ctx.fillRect(0, 0, this.width, this.height);
     }
+  }
+
+  private drawDamageNumber(dn: DamageNumber) {
+      const alpha = Math.min(1, dn.life / 0.3); // Fade out last 0.3s
+      this.ctx.save();
+      this.ctx.translate(dn.position.x, dn.position.y);
+      this.ctx.scale(dn.scale, dn.scale);
+      this.ctx.globalAlpha = alpha;
+      
+      this.ctx.font = `bold ${dn.isCritical ? 24 : 16}px Inter, sans-serif`;
+      this.ctx.fillStyle = dn.color;
+      this.ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      this.ctx.lineWidth = 3;
+      
+      this.ctx.strokeText(Math.round(dn.value).toString(), 0, 0);
+      this.ctx.fillText(Math.round(dn.value).toString(), 0, 0);
+      
+      this.ctx.restore();
   }
 
   private drawAbstractBackground() {
@@ -189,32 +222,82 @@ export class GameRenderer {
   }
 
   private drawParticle(particle: ParticleEntity) {
+      const alpha = particle.lifetime / particle.maxLifetime;
+      
       if (particle.style === 'ricochet_trail') {
-          const alpha = particle.lifetime / particle.maxLifetime;
-          
           this.ctx.beginPath();
           this.ctx.moveTo(particle.from.x, particle.from.y);
           this.ctx.lineTo(particle.to.x, particle.to.y);
-          
           this.ctx.lineCap = 'round';
           this.ctx.lineWidth = particle.width;
-          
           this.ctx.strokeStyle = `rgba(251, 191, 36, ${alpha})`;
           this.ctx.stroke();
+      } else if (particle.style === 'spark') {
+          // Dot spark
+          this.ctx.beginPath();
+          this.ctx.arc(particle.position.x, particle.position.y, particle.radius * alpha, 0, Math.PI * 2);
+          this.ctx.fillStyle = particle.color;
+          this.ctx.globalAlpha = alpha;
+          this.ctx.fill();
+          this.ctx.globalAlpha = 1.0;
+      } else if (particle.style === 'explosion') {
+          // Expanding ring/blast
+          this.ctx.save();
+          this.ctx.translate(particle.position.x, particle.position.y);
+          
+          const maxRadius = particle.width;
+          const currentRadius = maxRadius * (1 - alpha);
+          
+          this.ctx.beginPath();
+          this.ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+          this.ctx.fillStyle = particle.color;
+          this.ctx.globalAlpha = alpha * 0.5;
+          this.ctx.fill();
+          
+          this.ctx.beginPath();
+          this.ctx.arc(0, 0, currentRadius * 0.8, 0, Math.PI * 2);
+          this.ctx.strokeStyle = '#fff';
+          this.ctx.lineWidth = 2;
+          this.ctx.globalAlpha = alpha;
+          this.ctx.stroke();
+          
+          this.ctx.restore();
       }
   }
 
   private drawEntity(entity: any) {
     this.ctx.save();
-    this.ctx.translate(entity.position.x, entity.position.y);
-    // Use the entity's rotation, default to 0
-    this.ctx.rotate(entity.rotation || 0);
+    
+    // Position handling - Account for Player Visual Recoil
+    let posX = entity.position.x;
+    let posY = entity.position.y;
+    if (entity.type === EntityType.Player && (entity as PlayerEntity).recoil) {
+        const p = entity as PlayerEntity;
+        posX += p.recoil.x;
+        posY += p.recoil.y;
+    }
+
+    this.ctx.translate(posX, posY);
+    
+    // Rotation handling - Account for Enemy Wobble
+    let rotation = entity.rotation || 0;
+    if (entity.type === EntityType.Enemy && (entity as EnemyEntity).wobble) {
+        const e = entity as EnemyEntity;
+        // Apply wobble as a rotation offset (simple random jitter or sine)
+        // Since wobble decays, we can just oscillate it based on time or random
+        rotation += (Math.random() - 0.5) * e.wobble;
+    }
+    
+    this.ctx.rotate(rotation);
 
     // Hit Flash Effect: White color if timer active
     if (entity.hitFlashTimer && entity.hitFlashTimer > 0) {
         this.ctx.fillStyle = '#ffffff';
+        this.ctx.shadowBlur = 10;
+        this.ctx.shadowColor = '#ffffff';
     } else {
         this.ctx.fillStyle = entity.color || '#fff';
+        this.ctx.shadowBlur = 0;
     }
 
     // Shape Rendering Switch
@@ -231,7 +314,25 @@ export class GameRenderer {
         }
 
     } else if (entity.type === EntityType.Projectile) {
-        if (entity.isEnemyProjectile) {
+        const proj = entity as ProjectileEntity;
+        if (proj.isEnemyProjectile) {
+            // Draw Trailing Effect (Simple motion blur line behind)
+            // We can infer backward direction from velocity
+            // Since we are rotated to match velocity, "back" is just negative x
+            this.ctx.save();
+            const trailLen = 15;
+            const grad = this.ctx.createLinearGradient(0, 0, -trailLen, 0);
+            grad.addColorStop(0, proj.color);
+            grad.addColorStop(1, 'transparent');
+            this.ctx.fillStyle = grad;
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, proj.radius * 0.5);
+            this.ctx.lineTo(-trailLen, 0);
+            this.ctx.lineTo(0, -proj.radius * 0.5);
+            this.ctx.fill();
+            this.ctx.restore();
+
+            // Main Shape
             this.ctx.beginPath();
             const r = entity.radius;
             this.ctx.moveTo(r, 0);
@@ -243,6 +344,7 @@ export class GameRenderer {
             this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
             this.ctx.lineWidth = 1.5;
             this.ctx.stroke();
+            this.ctx.fillStyle = proj.hitFlashTimer ? '#fff' : proj.color; // Ensure flash affects fill
             this.ctx.fill();
 
             this.ctx.shadowBlur = 5;
@@ -515,7 +617,7 @@ export class GameRenderer {
              } else if (enemy.aiState === 'charge') {
                  this.ctx.fillStyle = '#fca5a5'; // Bright Red charging
              } else {
-                 this.ctx.fillStyle = enemy.color;
+                 this.ctx.fillStyle = enemy.hitFlashTimer ? '#fff' : enemy.color;
              }
              this.ctx.fill();
 
@@ -534,6 +636,12 @@ export class GameRenderer {
                  this.ctx.beginPath();
                  this.ctx.arc(0, 0, 280, 0, Math.PI * 2); // SLAM_RADIUS
                  this.ctx.stroke();
+                 
+                 // Fill Logic to show timing
+                 const t = 1 - (enemy.aiStateTimer / 0.8); // 0 to 1
+                 this.ctx.fillStyle = `rgba(239, 68, 68, ${0.2 * t})`;
+                 this.ctx.fill();
+                 
                  this.ctx.restore();
              }
              

@@ -1,7 +1,9 @@
+
 import { EntityManager } from '../entities/EntityManager';
-import { PlayerEntity, EnemyEntity, ProjectileEntity, EntityType, EnemyVariant } from '../entities/types';
+import { PlayerEntity, EnemyEntity, ProjectileEntity, EntityType, EnemyVariant, DamageNumber } from '../entities/types';
 import { ENEMY_SPAWN_RATE, GAME_WIDTH, GAME_HEIGHT } from '../utils/constants';
 import { SpatialHashGrid } from '../utils/spatialHash';
+import { Vector2, Vec2 } from '../utils/math';
 
 export enum GameStatus {
   Menu = 'menu',
@@ -117,6 +119,15 @@ export class GameState {
 
   debugMode: boolean = false; // For logging
 
+  // --- JUICE STATE ---
+  screenshake: {
+      intensity: number;
+      decay: number;
+      offset: Vector2;
+  };
+  hitStopTimer: number;
+  damageNumbers: DamageNumber[];
+
   constructor() {
     this.entityManager = new EntityManager();
     this.spatialHash = new SpatialHashGrid(64); // 64px cells (~2x max enemy diameter)
@@ -171,6 +182,11 @@ export class GameState {
     this.purchasedFamilyCounts = new Map();
     this.pendingUpgradeIds = [];
     this.isPlayerAlive = true;
+
+    // Juice Init
+    this.screenshake = { intensity: 0, decay: 0, offset: { x: 0, y: 0 } };
+    this.hitStopTimer = 0;
+    this.damageNumbers = [];
   }
 
   /**
@@ -214,6 +230,10 @@ export class GameState {
     this.player = null;
     this.areUpgradesExhausted = false;
     this.isPlayerAlive = true;
+
+    this.screenshake = { intensity: 0, decay: 0, offset: { x: 0, y: 0 } };
+    this.hitStopTimer = 0;
+    this.damageNumbers = [];
   }
 
   /**
