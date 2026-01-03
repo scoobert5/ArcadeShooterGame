@@ -136,6 +136,7 @@ export class GameState {
       particlesSpawnedThisFrame: number;
       deathBurstsThisSecond: number;
       secondTimer: number;
+      hitsProcessedThisFrame: number;
   };
   
   // Hard cap on player projectiles for FPS stability
@@ -203,7 +204,8 @@ export class GameState {
     this.vfxState = {
         particlesSpawnedThisFrame: 0,
         deathBurstsThisSecond: 0,
-        secondTimer: 0
+        secondTimer: 0,
+        hitsProcessedThisFrame: 0
     };
 
     // Initialize Particle Pool
@@ -317,7 +319,8 @@ export class GameState {
     this.vfxState = {
         particlesSpawnedThisFrame: 0,
         deathBurstsThisSecond: 0,
-        secondTimer: 0
+        secondTimer: 0,
+        hitsProcessedThisFrame: 0
     };
   }
 
@@ -328,6 +331,7 @@ export class GameState {
 
   resetFrameStats() {
       this.vfxState.particlesSpawnedThisFrame = 0;
+      this.vfxState.hitsProcessedThisFrame = 0;
   }
 
   updateVfxTimers(dt: number) {
@@ -401,7 +405,12 @@ export class GameState {
       
       // Internal
       p.age = 0;
-      p.hitEntityIds = []; // Clear array
+      // OPTIMIZATION: Reuse existing array instead of allocating new one
+      if (p.hitEntityIds) {
+          p.hitEntityIds.length = 0;
+      } else {
+          p.hitEntityIds = []; 
+      }
       p.trailHead = 0;
       
       // Reset Trail Points

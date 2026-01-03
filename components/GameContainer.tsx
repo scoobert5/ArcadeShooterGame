@@ -31,7 +31,7 @@ export const GameContainer: React.FC = () => {
   const [playerHealth, setPlayerHealth] = useState({ current: 100, max: 100, shields: 0, maxShields: 0 });
   const [ammoState, setAmmoState] = useState({ current: 10, max: 10, isReloading: false });
   const [bossHealth, setBossHealth] = useState({ current: 0, max: 100, active: false });
-  const [debugStats, setDebugStats] = useState<{ fps: number, projectiles: number, particles: number, spawns: number, deaths: number, enemies: number } | null>(null);
+  const [debugStats, setDebugStats] = useState<{ fps: number, projectiles: number, particles: number, spawns: number, deaths: number, enemies: number, hits: number } | null>(null);
   
   // Meta State for UI
   const [runMeta, setRunMeta] = useState({ currency: 0, xp: 0 });
@@ -98,7 +98,8 @@ export const GameContainer: React.FC = () => {
                 particles: engine.state.activeParticleCount,
                 spawns: engine.state.vfxState.particlesSpawnedThisFrame,
                 deaths: engine.state.vfxState.deathBurstsThisSecond,
-                enemies: engine.state.entityManager.getByType('enemy').length
+                enemies: engine.state.entityManager.getByType('enemy').length,
+                hits: engine.state.vfxState.hitsProcessedThisFrame
             });
         } else if (debugStats !== null) {
             setDebugStats(null);
@@ -255,6 +256,7 @@ export const GameContainer: React.FC = () => {
                   Player Proj: {debugStats.projectiles}<br/>
                   Active Particles: {debugStats.particles}<br/>
                   Particles/Frame: {debugStats.spawns}<br/>
+                  Hits/Frame: {debugStats.hits}<br/>
                   Death Burst/Sec: {debugStats.deaths}<br/>
                   Enemies: {debugStats.enemies}
               </div>

@@ -125,6 +125,8 @@ export class DamageSystem implements System {
       // If piercing, check if we already hit this enemy
       if (projectile.hitEntityIds.includes(enemy.id)) continue;
 
+      state.vfxState.hitsProcessedThisFrame++;
+
       // Apply Damage
       let damage = projectile.damage;
       let isCrit = false;
@@ -494,29 +496,36 @@ export class DamageSystem implements System {
       let currentDamage = projectile.damage;
       let bounces = projectile.bouncesRemaining;
       
-      const hitIds = [...projectile.hitEntityIds, hitEnemy.id];
+      // OPTIMIZATION: Do NOT allocate a new array here.
+      // projectile.hitEntityIds has already tracked history.
+      // Since this is an instant chain, we will push subsequent hits to it directly.
 
       while (bounces > 0) {
           const candidates = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
           let closest: EnemyEntity | null = null;
-          let minDst = Infinity;
+          let minDstSq = Infinity; // Squared distance
           
           const maxDist = projectile.ricochetSearchRadius || 200; 
+          const maxDistSq = maxDist * maxDist;
 
           for (const cand of candidates) {
-              if (!cand.active || hitIds.includes(cand.id)) continue;
+              // OPTIMIZATION: Check exclusion using existing array
+              if (!cand.active || projectile.hitEntityIds.includes(cand.id)) continue;
               
               if (cand.position.x < 0 || cand.position.x > state.worldWidth || 
                   cand.position.y < 0 || cand.position.y > state.worldHeight) {
                   continue;
               }
 
-              const d = Vec2.dist(currentSource.position, cand.position);
+              // OPTIMIZATION: Use Squared Distance to avoid Sqrt
+              const dx = currentSource.position.x - cand.position.x;
+              const dy = currentSource.position.y - cand.position.y;
+              const distSq = dx*dx + dy*dy;
               
-              if (d > maxDist) continue;
+              if (distSq > maxDistSq) continue;
 
-              if (d < minDst) {
-                  minDst = d;
+              if (distSq < minDstSq) {
+                  minDstSq = distSq;
                   closest = cand;
               }
           }
@@ -552,7 +561,10 @@ export class DamageSystem implements System {
               this.handleEnemyDeath(state, closest);
           }
 
-          hitIds.push(closest.id);
+          // OPTIMIZATION: Update exclusion list for next hop
+          projectile.hitEntityIds.push(closest.id);
+          state.vfxState.hitsProcessedThisFrame++;
+
           currentSource = closest;
           
           bounces--;
