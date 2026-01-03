@@ -1,3 +1,4 @@
+
 import { EnemyVariant } from '../entities/types';
 
 export const GAME_WIDTH = 800; // Legacy fallback, real size is dynamic
@@ -15,12 +16,19 @@ export const PLAYER_FIRE_RATE = 0.15; // Seconds between shots
 export const PROJECTILE_SPEED = 600;
 export const PROJECTILE_RADIUS = 4;
 export const PROJECTILE_LIFETIME = 2.0; // Seconds
+export const MAX_PLAYER_PROJECTILES = 400; // Hard cap for performance
 
 // Enemy Global Stats
 export const ENEMY_SPAWN_RATE = 1.5; // Seconds
 export const ENEMY_MIN_SPAWN_RATE = 0.3; // Fastest possible spawn rate
 export const ENEMY_SEPARATION_RADIUS = 60; // Distance at which enemies try to move apart
 export const ENEMY_SEPARATION_FORCE = 0.8; // Lowered to allow tighter swarms
+
+// VFX & Performance Settings
+export const VFX_BUDGET_PARTICLES_PER_FRAME = 60; // Max particles to spawn in a single frame
+export const VFX_BUDGET_DEATHS_PER_SEC = 15;     // Max full death explosions per second
+export const VFX_IMPACT_COOLDOWN = 0.08;          // Min seconds between impact effects on same enemy
+export const VFX_LOD_PROJECTILE_THRESHOLD = 150;  // Active projectiles count to trigger Low Detail Mode
 
 // Difficulty Scaling
 export const WAVE_DIFFICULTY_SCALING = 0.05; // 5% stat increase per wave

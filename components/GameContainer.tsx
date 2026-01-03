@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { GameEngine } from '../core/GameEngine';
 import { GameCanvas } from './GameCanvas';
@@ -30,6 +31,7 @@ export const GameContainer: React.FC = () => {
   const [playerHealth, setPlayerHealth] = useState({ current: 100, max: 100, shields: 0, maxShields: 0 });
   const [ammoState, setAmmoState] = useState({ current: 10, max: 10, isReloading: false });
   const [bossHealth, setBossHealth] = useState({ current: 0, max: 100, active: false });
+  const [debugStats, setDebugStats] = useState<{ projectiles: number, particles: number, spawns: number, deaths: number, enemies: number } | null>(null);
   
   // Meta State for UI
   const [runMeta, setRunMeta] = useState({ currency: 0, xp: 0 });
@@ -79,7 +81,7 @@ export const GameContainer: React.FC = () => {
         setBossHealth(health);
     };
     
-    // Poll for ammo state
+    // Poll for ammo state and debug
     const syncInterval = setInterval(() => {
         if (engine.state.player) {
             setAmmoState({
@@ -87,6 +89,18 @@ export const GameContainer: React.FC = () => {
                 max: engine.state.player.maxAmmo,
                 isReloading: engine.state.player.isReloading
             });
+        }
+        
+        if (engine.state.debugMode) {
+            setDebugStats({
+                projectiles: engine.state.activePlayerProjectileCount,
+                particles: engine.state.activeParticleCount,
+                spawns: engine.state.vfxState.particlesSpawnedThisFrame,
+                deaths: engine.state.vfxState.deathBurstsThisSecond,
+                enemies: engine.state.entityManager.getByType('enemy').length
+            });
+        } else if (debugStats !== null) {
+            setDebugStats(null);
         }
     }, 100);
 
@@ -134,7 +148,7 @@ export const GameContainer: React.FC = () => {
       engine.off('wave_intro_timer', handleWaveTimer);
       engine.off('boss_health_change', handleBossHealthChange);
     };
-  }, [engine]);
+  }, [engine, debugStats]);
 
   const handleStart = () => {
     engine.startGame();
@@ -191,8 +205,15 @@ export const GameContainer: React.FC = () => {
           const amount = parseInt(lowerCmd.split('_')[1], 10);
           engine.giveScore(amount);
       }
+      else if (lowerCmd.startsWith('giveallupgrade_')) {
+          const family = lowerCmd.split('_')[1];
+          engine.giveFamilyUpgrades(family);
+      }
       else if (lowerCmd === 'openshop') {
           engine.openDevShop();
+      }
+      else if (lowerCmd === 'debug') {
+          engine.state.debugMode = !engine.state.debugMode;
       }
   };
 
@@ -225,6 +246,17 @@ export const GameContainer: React.FC = () => {
           />
           {/* Add Boss Health Bar here */}
           <BossHealthBar current={bossHealth.current} max={bossHealth.max} active={bossHealth.active} />
+          
+          {debugStats && (
+              <div className="absolute bottom-2 left-2 text-green-400 font-mono text-xs z-50 bg-black/50 p-2 rounded pointer-events-none">
+                  [DEBUG PERFORMANCE]<br/>
+                  Player Proj: {debugStats.projectiles}<br/>
+                  Active Particles: {debugStats.particles}<br/>
+                  Particles/Frame: {debugStats.spawns}<br/>
+                  Death Burst/Sec: {debugStats.deaths}<br/>
+                  Enemies: {debugStats.enemies}
+              </div>
+          )}
         </>
       )}
       

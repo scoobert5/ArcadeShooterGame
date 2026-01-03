@@ -1,7 +1,8 @@
+
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
 import { PlayerEntity } from '../entities/types';
-import { CHAINS, SYNERGY_LEVELS } from '../data/upgrades';
+import { CHAINS, SYNERGY_LEVELS, UpgradeFamily } from '../data/upgrades';
 import { calculateUpgradeCost } from '../utils/economy';
 
 export class UpgradeSystem implements System {
@@ -60,7 +61,7 @@ export class UpgradeSystem implements System {
 
     // Enforce Max Level
     if (currentLevel >= chain.tiers.length) {
-      console.warn(`Upgrade ${chain.baseName} is already at max level.`);
+      // console.warn(`Upgrade ${chain.baseName} is already at max level.`);
       return false;
     }
 
@@ -113,5 +114,28 @@ export class UpgradeSystem implements System {
           state.score -= cost;
       }
       return success;
+  }
+
+  /**
+   * Cheat/Dev Command: Grants all upgrades for a specific family.
+   */
+  public maxOutFamily(state: GameState, familyName: string) {
+      const normalizedFamily = familyName.toUpperCase();
+      if (normalizedFamily !== 'BULLETS' && normalizedFamily !== 'DEFENSE' && normalizedFamily !== 'MOBILITY') {
+          console.warn("Invalid family: " + familyName);
+          return;
+      }
+      
+      const family = normalizedFamily as UpgradeFamily;
+      const familyChains = CHAINS.filter(c => c.family === family);
+      
+      for (const chain of familyChains) {
+          const currentLevel = state.ownedUpgrades.get(chain.id) || 0;
+          const maxLevel = chain.tiers.length;
+          // Apply remaining levels
+          for(let i = currentLevel; i < maxLevel; i++) {
+              this.applyUpgrade(state, chain.id);
+          }
+      }
   }
 }

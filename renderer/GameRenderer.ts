@@ -29,26 +29,20 @@ export class GameRenderer {
    */
   render(state: GameState) {
     // F. UI BACKGROUND ISOLATION Check
-    // If in non-gameplay modes (Menu, Shop, GameOver, WaveIntro), render abstract background only
     if (state.status === GameStatus.Menu || 
         state.status === GameStatus.Shop || 
         state.status === GameStatus.GameOver || 
         state.status === GameStatus.WaveIntro ||
         state.status === GameStatus.Extraction ||
-        state.status === GameStatus.ExtractionSuccess) { // Added ExtractionSuccess
+        state.status === GameStatus.ExtractionSuccess) {
         
         this.drawAbstractBackground();
         return;
     }
 
-    // GAMEPLAY RENDER (Playing, Paused, DevConsole)
+    // GAMEPLAY RENDER
     this.clear();
     
-    // Safety check if resizing state hasn't propagated
-    if (this.width !== state.worldWidth || this.height !== state.worldHeight) {
-       // This might happen for one frame during resize, generally acceptable
-    }
-
     // --- APPLY SCREEN SHAKE ---
     this.ctx.save();
     if (state.screenshake.intensity > 0) {
@@ -58,33 +52,34 @@ export class GameRenderer {
     // Render all active entities
     const entities = state.entityManager.getAll();
     
-    // 1. Background Layer: Hazards (Draw first so they are on floor)
+    // 1. Background Layer: Hazards
     for (const entity of entities) {
         if (entity.type === EntityType.Hazard) {
             this.drawHazard(entity as HazardEntity);
         }
     }
 
-    // 2. Middle Layer: Particles
+    // 2. Middle Layer: Particles (From Pool)
     this.ctx.save();
-    for (const entity of entities) {
-        if (entity.type === EntityType.Particle) {
-            this.drawParticle(entity as ParticleEntity);
+    const particlePool = state.particlePool;
+    for (let i = 0; i < particlePool.length; i++) {
+        const p = particlePool[i];
+        if (p.active) {
+            this.drawParticle(p);
         }
     }
     this.ctx.restore();
 
-    // 3. Top Layer: Main Entities
+    // 3. Player Projectiles (Batched & Pooled)
+    this.drawPlayerProjectiles(state);
+
+    // 4. Top Layer: Main Entities (Player, Enemies, Enemy Projectiles)
     for (const entity of entities) {
-      // Don't draw player during Wave Intro (handled by exclusion check above anyway)
-      
-      // Skip already drawn types
       if (entity.type === EntityType.Particle || entity.type === EntityType.Hazard) continue;
-      
       this.drawEntity(entity);
     }
     
-    // 4. JUICE LAYER: Damage Numbers
+    // 5. JUICE LAYER: Damage Numbers
     for (const dn of state.damageNumbers) {
         this.drawDamageNumber(dn);
     }
@@ -97,7 +92,7 @@ export class GameRenderer {
     // Restore shake transform
     this.ctx.restore();
 
-    // Visual overlay for paused state handled here (simple primitive)
+    // Visual overlay for paused state handled here
     if (state.status === GameStatus.Paused) {
       this.drawPauseOverlay();
     }
@@ -107,6 +102,76 @@ export class GameRenderer {
         this.ctx.fillStyle = `rgba(220, 38, 38, ${Math.min(0.4, state.player.hitFlashTimer * 2)})`;
         this.ctx.fillRect(0, 0, this.width, this.height);
     }
+  }
+
+  private drawPlayerProjectiles(state: GameState) {
+      const pool = state.playerProjectilePool;
+      const count = state.activePlayerProjectileCount;
+      const useLOD = count > 200; // Visual LOD threshold
+      
+      this.ctx.save();
+      
+      // Batch 1: Standard Projectiles
+      this.ctx.beginPath();
+      this.ctx.fillStyle = Colors.Projectile;
+      
+      for (let i = 0; i < pool.length; i++) {
+          const p = pool[i];
+          if (!p.active) continue;
+          
+          // Separate colors require breaking batch or multiple passes.
+          // Optimization: Draw standard colored ones in one go.
+          if (p.isVulnerabilityShot) continue; // Skip special ones for next pass
+
+          // Draw Trail (Only if LOD permits, and recently spawned to avoid clutter)
+          if (!useLOD || (p.age && p.age < 0.5)) {
+              if (p.trail && p.trail.length > 0) {
+                  // Trails must be drawn stroked, so break path for fill?
+                  // No, we can draw trails in a separate pass.
+              }
+          }
+
+          // Draw Dot
+          this.ctx.moveTo(p.position.x + p.radius, p.position.y);
+          this.ctx.arc(p.position.x, p.position.y, p.radius, 0, Math.PI * 2);
+      }
+      this.ctx.fill();
+
+      // Batch 2: Vulnerability Projectiles (Purple)
+      this.ctx.beginPath();
+      this.ctx.fillStyle = '#d946ef';
+      for (let i = 0; i < pool.length; i++) {
+          const p = pool[i];
+          if (!p.active || !p.isVulnerabilityShot) continue;
+          this.ctx.moveTo(p.position.x + p.radius, p.position.y);
+          this.ctx.arc(p.position.x, p.position.y, p.radius, 0, Math.PI * 2);
+      }
+      this.ctx.fill();
+
+      // Batch 3: Trails (Vector) - Only if not heavy load
+      if (!useLOD) {
+          this.ctx.beginPath();
+          this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          this.ctx.lineWidth = 1; // Thinner for perf
+          
+          for (let i = 0; i < pool.length; i++) {
+              const p = pool[i];
+              if (!p.active) continue;
+              
+              if (p.trail && p.trail.length > 0) {
+                  const head = p.trailHead;
+                  // Just draw a line from oldest to current
+                  const oldest = p.trail[(head + 1) % p.trail.length];
+                  if (oldest.x !== 0) {
+                      this.ctx.moveTo(oldest.x, oldest.y);
+                      this.ctx.lineTo(p.position.x, p.position.y);
+                  }
+              }
+          }
+          this.ctx.stroke();
+      }
+
+      this.ctx.restore();
   }
 
   private drawDamageNumber(dn: DamageNumber) {
@@ -128,19 +193,16 @@ export class GameRenderer {
   }
 
   private drawAbstractBackground() {
-      // Mode 2: Stylized Static Backdrop
       const grad = this.ctx.createRadialGradient(
           this.width / 2, this.height / 2, 0, 
           this.width / 2, this.height / 2, Math.max(this.width, this.height)
       );
-      grad.addColorStop(0, '#1e1b4b'); // Deep Indigo
-      grad.addColorStop(1, '#020617'); // Slate 950
+      grad.addColorStop(0, '#1e1b4b'); 
+      grad.addColorStop(1, '#020617'); 
       
       this.ctx.fillStyle = grad;
       this.ctx.fillRect(0, 0, this.width, this.height);
       
-      // Optional: Add subtle noise or grid? 
-      // Keeping it clean as requested "simple is fine"
       this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
       this.ctx.lineWidth = 1;
       const gridSize = 40;
@@ -173,19 +235,16 @@ export class GameRenderer {
           this.ctx.moveTo(hazard.from.x, hazard.from.y);
           this.ctx.lineTo(hazard.to.x, hazard.to.y);
           
-          // Core line
-          this.ctx.strokeStyle = `rgba(99, 102, 241, ${alpha * 0.8})`; // Indigo
+          this.ctx.strokeStyle = `rgba(99, 102, 241, ${alpha * 0.8})`; 
           this.ctx.lineWidth = hazard.radius * 2;
           this.ctx.lineCap = 'round';
           this.ctx.stroke();
           
-          // Outer glow
           this.ctx.strokeStyle = `rgba(165, 180, 252, ${alpha * 0.4})`;
           this.ctx.lineWidth = hazard.radius * 2 + 4;
           this.ctx.stroke();
 
       } else if (hazard.isPlayerOwned) {
-           // Fallback for old circle trails
           this.ctx.translate(hazard.position.x, hazard.position.y);
           const alpha = Math.max(0, hazard.lifetime / hazard.maxLifetime);
           this.ctx.fillStyle = `rgba(99, 102, 241, ${alpha * 0.5})`;
@@ -197,19 +256,16 @@ export class GameRenderer {
           this.ctx.translate(hazard.position.x, hazard.position.y);
           const pulse = Math.sin(Date.now() / 200) * 0.1 + 0.9;
           
-          // Outer glow
-          this.ctx.fillStyle = 'rgba(16, 185, 129, 0.2)'; // Emerald
+          this.ctx.fillStyle = 'rgba(16, 185, 129, 0.2)'; 
           this.ctx.beginPath();
           this.ctx.arc(0, 0, hazard.radius * pulse, 0, Math.PI * 2);
           this.ctx.fill();
     
-          // Inner core
           this.ctx.fillStyle = 'rgba(16, 185, 129, 0.4)';
           this.ctx.beginPath();
           this.ctx.arc(0, 0, hazard.radius * 0.7 * pulse, 0, Math.PI * 2);
           this.ctx.fill();
           
-          // Warning Border
           this.ctx.strokeStyle = 'rgba(16, 185, 129, 0.8)';
           this.ctx.lineWidth = 2;
           this.ctx.setLineDash([5, 5]);
@@ -233,7 +289,6 @@ export class GameRenderer {
           this.ctx.strokeStyle = `rgba(251, 191, 36, ${alpha})`;
           this.ctx.stroke();
       } else if (particle.style === 'spark') {
-          // Dot spark
           this.ctx.beginPath();
           this.ctx.arc(particle.position.x, particle.position.y, particle.radius * alpha, 0, Math.PI * 2);
           this.ctx.fillStyle = particle.color;
@@ -241,7 +296,6 @@ export class GameRenderer {
           this.ctx.fill();
           this.ctx.globalAlpha = 1.0;
       } else if (particle.style === 'explosion') {
-          // Expanding ring/blast
           this.ctx.save();
           this.ctx.translate(particle.position.x, particle.position.y);
           
@@ -283,8 +337,7 @@ export class GameRenderer {
     let rotation = entity.rotation || 0;
     if (entity.type === EntityType.Enemy && (entity as EnemyEntity).wobble) {
         const e = entity as EnemyEntity;
-        // Apply wobble as a rotation offset (simple random jitter or sine)
-        // Since wobble decays, we can just oscillate it based on time or random
+        // Simple random jitter based on wobble intensity
         rotation += (Math.random() - 0.5) * e.wobble;
     }
     
@@ -314,25 +367,52 @@ export class GameRenderer {
         }
 
     } else if (entity.type === EntityType.Projectile) {
+        // ENEMY PROJECTILES ONLY (Player ones drawn in batch)
         const proj = entity as ProjectileEntity;
-        if (proj.isEnemyProjectile) {
-            // Draw Trailing Effect (Simple motion blur line behind)
-            // We can infer backward direction from velocity
-            // Since we are rotated to match velocity, "back" is just negative x
-            this.ctx.save();
-            const trailLen = 15;
-            const grad = this.ctx.createLinearGradient(0, 0, -trailLen, 0);
-            grad.addColorStop(0, proj.color);
-            grad.addColorStop(1, 'transparent');
-            this.ctx.fillStyle = grad;
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, proj.radius * 0.5);
-            this.ctx.lineTo(-trailLen, 0);
-            this.ctx.lineTo(0, -proj.radius * 0.5);
-            this.ctx.fill();
-            this.ctx.restore();
+        
+        // Draw Trail (Legacy non-pooled)
+        this.ctx.restore(); // Go back to world space
+        this.ctx.save();    // Save world space state for next entity
 
-            // Main Shape
+        if (proj.trail && proj.trail.length > 0) {
+            const trailLen = proj.trail.length;
+            this.ctx.beginPath();
+            let started = false;
+            let idx = (proj.trailHead + 1) % trailLen;
+            for(let i=0; i<trailLen; i++) {
+                const pt = proj.trail[idx];
+                if (pt.x === 0 && pt.y === 0) { 
+                    idx = (idx + 1) % trailLen;
+                    continue; 
+                }
+                
+                if (!started) {
+                    this.ctx.moveTo(pt.x, pt.y);
+                    started = true;
+                } else {
+                    this.ctx.lineTo(pt.x, pt.y);
+                }
+                idx = (idx + 1) % trailLen;
+            }
+            this.ctx.lineTo(proj.position.x, proj.position.y);
+            
+            this.ctx.strokeStyle = proj.color;
+            this.ctx.lineWidth = proj.radius * 0.8;
+            this.ctx.globalAlpha = 0.4;
+            this.ctx.lineJoin = 'round';
+            this.ctx.stroke();
+            this.ctx.globalAlpha = 1.0;
+        }
+        
+        // Re-apply transform
+        this.ctx.translate(posX, posY);
+        this.ctx.rotate(rotation);
+
+        if (proj.isEnemyProjectile) {
+            // Apply visual wobble for enemy projectiles
+            const wobbleY = Math.sin(Date.now() / 50 + parseFloat(proj.id.slice(-4))) * 2;
+            this.ctx.translate(0, wobbleY);
+
             this.ctx.beginPath();
             const r = entity.radius;
             this.ctx.moveTo(r, 0);
@@ -344,28 +424,11 @@ export class GameRenderer {
             this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
             this.ctx.lineWidth = 1.5;
             this.ctx.stroke();
-            this.ctx.fillStyle = proj.hitFlashTimer ? '#fff' : proj.color; // Ensure flash affects fill
+            this.ctx.fillStyle = proj.hitFlashTimer ? '#fff' : proj.color;
             this.ctx.fill();
 
             this.ctx.shadowBlur = 5;
             this.ctx.shadowColor = entity.color;
-        } else {
-            this.ctx.beginPath();
-            this.ctx.arc(0, 0, entity.radius, 0, Math.PI * 2);
-            this.ctx.fillStyle = Colors.Projectile; 
-            this.ctx.fill();
-            
-            this.ctx.beginPath();
-            this.ctx.arc(0, 0, entity.radius * 0.5, 0, Math.PI * 2);
-            this.ctx.fillStyle = '#ffffff';
-            this.ctx.fill();
-            
-            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-            this.ctx.lineWidth = 2;
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, 0);
-            this.ctx.lineTo(entity.radius, 0);
-            this.ctx.stroke();
         }
     } else {
         // Player
@@ -373,7 +436,6 @@ export class GameRenderer {
         this.ctx.arc(0, 0, entity.radius, 0, Math.PI * 2);
         this.ctx.fill();
         
-        // Draw direction indicator for Player
         this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
@@ -382,36 +444,29 @@ export class GameRenderer {
         this.ctx.stroke();
         
         const player = entity as PlayerEntity;
-        const shieldRadius = player.radius + 24; // Outer shell collision/visual radius
+        const shieldRadius = player.radius + 24; 
         
-        // --- 1. POP EFFECT (Burst when charge consumed) ---
-        // This renders INDEPENDENTLY of the main shield
+        // --- 1. POP EFFECT ---
         if (player.shieldPopTimer > 0) {
-            // Unrotate for stability? No, consistent with aim is fine.
-            const t = 1 - (player.shieldPopTimer / 0.2); // 0 to 1
-            const burstRadius = shieldRadius + (t * 20); // Expand outward
+            const t = 1 - (player.shieldPopTimer / 0.2); 
+            const burstRadius = shieldRadius + (t * 20); 
             const alpha = 1 - t;
             
             this.ctx.beginPath();
             this.ctx.arc(0, 0, burstRadius, 0, Math.PI * 2);
-            this.ctx.strokeStyle = `rgba(100, 230, 255, ${alpha})`; // Bright cyan pop
+            this.ctx.strokeStyle = `rgba(100, 230, 255, ${alpha})`; 
             this.ctx.lineWidth = 4;
             this.ctx.stroke();
             
-            // Inner flash fill
             this.ctx.fillStyle = `rgba(100, 230, 255, ${alpha * 0.3})`;
             this.ctx.fill();
         }
 
         // --- 2. PERSISTENT SHIELD VISUALS ---
         if (player.currentShields > 0) {
-            
-            // Determine opacity based on charges
-            // Scale 0.2 to 0.6
             const opacity = 0.2 + (player.currentShields / player.maxShields) * 0.4;
-            const shieldColor = 'rgba(14, 165, 233,'; // Sky Blue
+            const shieldColor = 'rgba(14, 165, 233,'; 
 
-            // Spherical Energy Field
             const grad = this.ctx.createRadialGradient(0, 0, shieldRadius * 0.7, 0, 0, shieldRadius);
             grad.addColorStop(0, `${shieldColor} 0.0)`);
             grad.addColorStop(0.8, `${shieldColor} ${opacity * 0.3})`);
@@ -422,7 +477,6 @@ export class GameRenderer {
             this.ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
             this.ctx.fill();
             
-            // Pulsing Band
             const pulse = Math.sin(Date.now() / 200) * 0.1 + 0.9;
             this.ctx.beginPath();
             this.ctx.arc(0, 0, shieldRadius * 0.85 * pulse, 0, Math.PI * 2);
@@ -430,7 +484,6 @@ export class GameRenderer {
             this.ctx.lineWidth = 2;
             this.ctx.stroke();
 
-            // Rim Highlight
             this.ctx.beginPath();
             this.ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
             this.ctx.strokeStyle = `${shieldColor} ${opacity * 0.9})`;
@@ -443,22 +496,21 @@ export class GameRenderer {
   }
 
   private drawPlayerAbilityUI(player: PlayerEntity) {
-      const { x, y } = player.position;
+      // Calculate position WITH recoil
+      // The calling function render() has already restored context, so we are in world space
+      // We must manually apply the recoil offset here to sync UI
+      const x = player.position.x + player.recoil.x;
+      const y = player.position.y + player.recoil.y;
+      
       const rotation = player.rotation;
       
-      // We need to render rings aligned with aim. 
-      // Current context is absolute world coordinates (unrotated).
-      // We will perform draws using arcs offset by `rotation`.
-      
-      // E. RELOAD UI (Final Form)
+      // E. RELOAD UI
       const ringRadius = player.radius + 12;
       
       if (player.isReloading) {
-        // Reloading: Smooth Fill Arc
         const reloadPct = 1 - (player.reloadTimer / player.maxReloadTime);
         const isAlmostDone = player.reloadTimer < 0.15;
         
-        // Background track
         this.ctx.beginPath();
         this.ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
         this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
@@ -467,7 +519,7 @@ export class GameRenderer {
         
         this.ctx.beginPath();
         this.ctx.arc(x, y, ringRadius, rotation, rotation + (Math.PI * 2 * reloadPct));
-        this.ctx.strokeStyle = isAlmostDone ? '#ffffff' : '#fbbf24'; // Amber
+        this.ctx.strokeStyle = isAlmostDone ? '#ffffff' : '#fbbf24'; 
         this.ctx.lineWidth = 4;
         this.ctx.lineCap = 'round';
         this.ctx.stroke();
@@ -475,19 +527,16 @@ export class GameRenderer {
         if (isAlmostDone) {
              this.ctx.shadowBlur = 10;
              this.ctx.shadowColor = '#ffffff';
-             this.ctx.stroke(); // Draw again for glow
+             this.ctx.stroke(); 
              this.ctx.shadowBlur = 0;
         }
       } else {
-        // Normal State: Segmented Bullets
         const fullCircle = Math.PI * 2;
-        const gap = 0.15; // Radians gap
+        const gap = 0.15; 
         
-        // Calculate arc per bullet
         const segmentArc = (fullCircle - (gap * player.maxAmmo)) / player.maxAmmo;
         
         if (player.maxAmmo > 40) {
-             // Solid bar for high ammo
              const pct = player.currentAmmo / player.maxAmmo;
              this.ctx.beginPath();
              this.ctx.arc(x, y, ringRadius, rotation, rotation + (fullCircle * pct));
@@ -496,7 +545,6 @@ export class GameRenderer {
              this.ctx.stroke();
         } else {
              this.ctx.lineWidth = 3;
-             // Draw Segments
              for (let i = 0; i < player.currentAmmo; i++) {
                 const angle = rotation + (i * (segmentArc + gap));
                 this.ctx.beginPath();
@@ -504,7 +552,6 @@ export class GameRenderer {
                 this.ctx.strokeStyle = '#fbbf24';
                 this.ctx.stroke();
             }
-            // Draw empty slots (faint)
             for (let i = player.currentAmmo; i < player.maxAmmo; i++) {
                 const angle = rotation + (i * (segmentArc + gap));
                 this.ctx.beginPath();
@@ -516,20 +563,14 @@ export class GameRenderer {
       }
 
       // 2. PULSE/DASH COOLDOWN RINGS
-      // We can layer them or put them further out.
-      // Pulse Cooldown
       const pulseRadius = player.radius + 18;
       
-      // Dash Cooldown / Fatigue Visualization
-      // "Visual cue shows dash recharge state"
-      // Let's use a small arc under the player or an outer ring
       if (player.dashUnlocked) {
           const dashRadius = player.radius + 22;
-          // Render charges as dots/arcs centered on aim direction
           const chargeArc = 0.4;
           const chargeGap = 0.1;
           const totalDashArc = (player.maxDashCharges * chargeArc) + ((player.maxDashCharges - 1) * chargeGap);
-          const startDash = rotation - (totalDashArc / 2) + Math.PI; // Opposite to aim (Rear)
+          const startDash = rotation - (totalDashArc / 2) + Math.PI; 
           
           for (let i = 0; i < player.maxDashCharges; i++) {
               const angle = startDash + (i * (chargeArc + chargeGap));
@@ -539,9 +580,8 @@ export class GameRenderer {
               this.ctx.lineWidth = 4;
               
               if (i < player.dashCharges) {
-                  this.ctx.strokeStyle = '#6366f1'; // Ready Indigo
+                  this.ctx.strokeStyle = '#6366f1'; 
               } else if (i === player.dashCharges) {
-                  // Recharging
                   const pct = 1 - (player.dashCooldown / player.maxDashCooldown);
                   this.ctx.strokeStyle = 'rgba(99, 102, 241, 0.3)';
                   this.ctx.stroke();
@@ -556,31 +596,27 @@ export class GameRenderer {
           }
       }
       
-      // Pulse (Ability) Ring
       if (player.maxRepulseCooldown > 0) {
         if (player.repulseCooldown > 0) {
-            // Cooldown indicator
             const pct = 1 - (player.repulseCooldown / player.maxRepulseCooldown);
             this.ctx.beginPath();
             this.ctx.arc(x, y, pulseRadius, rotation, rotation + (Math.PI * 2 * pct));
-            this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.3)'; // Cyan faint
+            this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.3)'; 
             this.ctx.lineWidth = 2;
             this.ctx.stroke();
         } else {
-            // READY STATE (New visual for Issue B)
-            const pulse = 1 + Math.sin(Date.now() / 250) * 0.08; // Breathe
+            const pulse = 1 + Math.sin(Date.now() / 250) * 0.08; 
             
             this.ctx.beginPath();
             this.ctx.arc(x, y, pulseRadius * pulse, 0, Math.PI * 2);
-            this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.8)'; // Cyan Glow
+            this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.8)'; 
             this.ctx.lineWidth = 2;
             this.ctx.stroke();
         }
       }
 
-      // 3. VISUAL PULSE EFFECT (The expanding wave when used)
       if (player.repulseVisualTimer > 0) {
-          const t = 1 - (player.repulseVisualTimer / 0.3); // 0 to 1 over 0.3s
+          const t = 1 - (player.repulseVisualTimer / 0.3); 
           const maxPulseRadius = 180;
           const currentRadius = player.radius + (maxPulseRadius - player.radius) * t;
           const alpha = 1 - t;
@@ -599,7 +635,6 @@ export class GameRenderer {
   private drawEnemyShape(enemy: EnemyEntity) {
     switch (enemy.variant) {
         case EnemyVariant.Boss:
-             // Big Hexagon with Core
              this.ctx.beginPath();
              const sides = 6;
              const r = enemy.radius;
@@ -609,36 +644,31 @@ export class GameRenderer {
              }
              this.ctx.closePath();
              
-             // Color logic based on State
              if (enemy.aiState === 'telegraph_slam' || enemy.aiState === 'telegraph_charge') {
-                 this.ctx.fillStyle = '#fbbf24'; // Warning Yellow
+                 this.ctx.fillStyle = '#fbbf24'; 
              } else if (enemy.aiState === 'recovery') {
-                 this.ctx.fillStyle = '#64748b'; // Gray/Vulnerable
+                 this.ctx.fillStyle = '#64748b'; 
              } else if (enemy.aiState === 'charge') {
-                 this.ctx.fillStyle = '#fca5a5'; // Bright Red charging
+                 this.ctx.fillStyle = '#fca5a5'; 
              } else {
                  this.ctx.fillStyle = enemy.hitFlashTimer ? '#fff' : enemy.color;
              }
              this.ctx.fill();
 
-             // Outline
              this.ctx.strokeStyle = '#fff';
              this.ctx.lineWidth = 4;
              this.ctx.stroke();
 
-             // VISUALS: Attack Telegraphs
              if (enemy.aiState === 'telegraph_slam') {
-                 // Draw Area of Effect
                  this.ctx.save();
                  this.ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
                  this.ctx.lineWidth = 2;
                  this.ctx.setLineDash([10, 10]);
                  this.ctx.beginPath();
-                 this.ctx.arc(0, 0, 280, 0, Math.PI * 2); // SLAM_RADIUS
+                 this.ctx.arc(0, 0, 280, 0, Math.PI * 2); 
                  this.ctx.stroke();
                  
-                 // Fill Logic to show timing
-                 const t = 1 - (enemy.aiStateTimer / 0.8); // 0 to 1
+                 const t = 1 - (enemy.aiStateTimer / 0.8); 
                  this.ctx.fillStyle = `rgba(239, 68, 68, ${0.2 * t})`;
                  this.ctx.fill();
                  
@@ -664,7 +694,7 @@ export class GameRenderer {
                  this.ctx.moveTo(r + 10, -arrowWidth/2);
                  this.ctx.lineTo(r + arrowLen, -arrowWidth/2);
                  this.ctx.lineTo(r + arrowLen, -arrowWidth);
-                 this.ctx.lineTo(r + arrowLen + 50, 0); // Tip
+                 this.ctx.lineTo(r + arrowLen + 50, 0); 
                  this.ctx.lineTo(r + arrowLen, arrowWidth);
                  this.ctx.lineTo(r + arrowLen, arrowWidth/2);
                  this.ctx.lineTo(r + 10, arrowWidth/2);
@@ -675,7 +705,6 @@ export class GameRenderer {
                  this.ctx.restore();
              }
              
-             // Inner Core (Pulsing?)
              this.ctx.fillStyle = 'rgba(0,0,0,0.5)';
              this.ctx.beginPath();
              this.ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2);
@@ -683,25 +712,21 @@ export class GameRenderer {
              break;
 
         case EnemyVariant.Fast:
-            // Triangle / Arrowhead
             this.ctx.beginPath();
-            this.ctx.moveTo(enemy.radius, 0); // Tip pointing forward (0 rads)
+            this.ctx.moveTo(enemy.radius, 0); 
             this.ctx.lineTo(-enemy.radius, -enemy.radius * 0.8);
-            this.ctx.lineTo(-enemy.radius * 0.5, 0); // Indent back
+            this.ctx.lineTo(-enemy.radius * 0.5, 0); 
             this.ctx.lineTo(-enemy.radius, enemy.radius * 0.8);
             this.ctx.closePath();
             this.ctx.fill();
             break;
 
         case EnemyVariant.Tank:
-            // Square / Boxy
             this.ctx.beginPath();
-            // Draw a rounded square centered at 0,0
             const size = enemy.radius;
             this.ctx.rect(-size, -size, size * 2, size * 2);
             this.ctx.fill();
             
-            // Add a "core" detail
             this.ctx.fillStyle = 'rgba(0,0,0,0.3)';
             this.ctx.beginPath();
             this.ctx.rect(-size/2, -size/2, size, size);
@@ -709,7 +734,6 @@ export class GameRenderer {
             break;
             
         case EnemyVariant.Shooter:
-            // Diamond Shape
             this.ctx.beginPath();
             this.ctx.moveTo(enemy.radius, 0);
             this.ctx.lineTo(0, enemy.radius * 0.7);
@@ -718,7 +742,6 @@ export class GameRenderer {
             this.ctx.closePath();
             this.ctx.fill();
             
-            // Inner Diamond
             this.ctx.fillStyle = 'rgba(0,0,0,0.3)';
             this.ctx.beginPath();
             this.ctx.moveTo(enemy.radius * 0.5, 0);
@@ -731,12 +754,10 @@ export class GameRenderer {
 
         case EnemyVariant.Basic:
         default:
-            // Circle with some texture
             this.ctx.beginPath();
             this.ctx.arc(0, 0, enemy.radius, 0, Math.PI * 2);
             this.ctx.fill();
             
-            // Simple detail line
             this.ctx.strokeStyle = 'rgba(0,0,0,0.2)';
             this.ctx.lineWidth = 2;
             this.ctx.beginPath();

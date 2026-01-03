@@ -1,3 +1,4 @@
+
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
 import { EntityType, EnemyEntity, ProjectileEntity } from '../entities/types';
@@ -11,7 +12,7 @@ export class CollisionSystem implements System {
     state.playerProjectileCollisionEvents = [];
 
     const enemies = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
-    const projectiles = state.entityManager.getByType(EntityType.Projectile) as ProjectileEntity[];
+    const enemyProjectiles = state.entityManager.getByType(EntityType.Projectile) as ProjectileEntity[];
     const player = state.player;
 
     // --- BROADPHASE START ---
@@ -88,31 +89,36 @@ export class CollisionSystem implements System {
       }
     }
 
-    // 3. Projectile Collision Detection
-    for (const proj of projectiles) {
+    // 3. Enemy Projectile Collision Detection (vs Player)
+    for (const proj of enemyProjectiles) {
       if (!proj.active) continue;
+      if (player && player.active) {
+          const isShieldActive = player.currentShields > 0;
+          const effectivePlayerRadius = isShieldActive ? player.radius + 24 : player.radius;
 
-      if (proj.isEnemyProjectile) {
-          // --- Enemy Projectile vs Player ---
-          if (player && player.active) {
-              const isShieldActive = player.currentShields > 0;
-              const effectivePlayerRadius = isShieldActive ? player.radius + 24 : player.radius;
-
-              const dist = Vec2.dist(proj.position, player.position);
-              const hitDist = proj.radius + effectivePlayerRadius;
-              
-              if (dist < hitDist) {
-                  state.playerProjectileCollisionEvents.push({
-                      player: player,
-                      projectile: proj
-                  });
-              }
+          const dist = Vec2.dist(proj.position, player.position);
+          const hitDist = proj.radius + effectivePlayerRadius;
+          
+          if (dist < hitDist) {
+              state.playerProjectileCollisionEvents.push({
+                  player: player,
+                  projectile: proj
+              });
           }
-      } else {
-          // --- Player Projectile vs Enemy ---
-          const candidates = state.spatialHash.query(proj.position.x, proj.position.y, proj.radius + 40);
+      }
+    }
 
-          for (const entity of candidates) {
+    // 4. Player Projectile Collision Detection (vs Enemies)
+    // Optimize: Iterate Pool
+    const pool = state.playerProjectilePool;
+    for (let i = 0; i < pool.length; i++) {
+        const proj = pool[i];
+        if (!proj.active) continue;
+
+        // Broadphase Query
+        const candidates = state.spatialHash.query(proj.position.x, proj.position.y, proj.radius + 40);
+
+        for (const entity of candidates) {
             const enemy = entity as EnemyEntity;
             if (!enemy.active) continue;
 
@@ -120,13 +126,13 @@ export class CollisionSystem implements System {
             const hitDist = proj.radius + enemy.radius;
 
             if (dist < hitDist) {
-              state.hitEvents.push({
-                projectile: proj,
-                enemy: enemy
-              });
+                state.hitEvents.push({
+                    projectile: proj,
+                    enemy: enemy
+                });
+                // We don't break here to allow AoE or piercing logic in DamageSystem to decide fate
             }
-          }
-      }
+        }
     }
   }
 }

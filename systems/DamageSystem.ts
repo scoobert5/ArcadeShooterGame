@@ -1,9 +1,9 @@
 
 import { System } from './BaseSystem';
 import { GameState } from '../core/GameState';
-import { EntityType, EnemyEntity, EnemyVariant, ProjectileEntity, ParticleEntity, HazardEntity, PlayerEntity } from '../entities/types';
+import { EntityType, EnemyEntity, EnemyVariant, ProjectileEntity, HazardEntity, PlayerEntity } from '../entities/types';
 import { Vec2, Vector2 } from '../utils/math';
-import { Colors } from '../utils/constants';
+import { Colors, VFX_IMPACT_COOLDOWN, VFX_LOD_PROJECTILE_THRESHOLD, VFX_BUDGET_DEATHS_PER_SEC } from '../utils/constants';
 
 export class DamageSystem implements System {
   update(dt: number, state: GameState) {
@@ -70,7 +70,7 @@ export class DamageSystem implements System {
                 
                 // IDENTITY: Phase Runner - Invulnerable Dash
                 if (player.dashInvulnerable && player.isDashing) {
-                    continue; // Skip damage check entirely
+                    continue; 
                 }
 
                 let dist = 0;
@@ -103,8 +103,7 @@ export class DamageSystem implements System {
                                  player.health -= actualDamage;
                                  player.hitFlashTimer = 0.1;
                                  
-                                 state.screenshake.intensity = 5;
-                                 state.screenshake.decay = 0.2;
+                                 state.addShake(5);
                                  
                                  // Reset Passive Regen
                                  if (player.synergyDefenseTier >= 2) player.shieldRegenTimer = 10.0;
@@ -121,7 +120,6 @@ export class DamageSystem implements System {
     for (const hit of state.hitEvents) {
       const { projectile, enemy } = hit;
 
-      // Guard against already handled entities
       if (!projectile.active || !enemy.active) continue;
       
       // If piercing, check if we already hit this enemy
@@ -133,19 +131,18 @@ export class DamageSystem implements System {
 
       // SYNERGY: BULLET T3 - Ricochet Damage Bonus
       if (projectile.isRicochet && player && player.synergyBulletTier >= 3) {
-          damage *= 1.5; // +50% Damage on ricochets
+          damage *= 1.5; 
       }
 
       // SYNERGY: VULNERABILITY (Incoming Damage Amp)
       if (enemy.vulnerableTimer && enemy.vulnerableTimer > 0) {
-          // Synergy T8: Doubled Effect
           const mult = (player && player.synergyBulletTier >= 8) ? 1.6 : 1.3;
           damage *= mult;
       }
       
       // BOSS VULNERABILITY CYCLE
       if (enemy.variant === EnemyVariant.Boss && enemy.bossVulnIsActive) {
-          damage *= 2.0; // Double Damage during window
+          damage *= 2.0; 
           isCrit = true;
       }
       
@@ -179,11 +176,11 @@ export class DamageSystem implements System {
           if (player.focusFireTarget === enemy.id) {
               damage += player.focusFireStacks * 5; 
           } else {
-              player.focusFireTarget = enemy.id; // Switch target
+              player.focusFireTarget = enemy.id; 
           }
       }
 
-      // Tank Armor Logic: Tanks reduce incoming damage by 40%
+      // Tank Armor Logic
       if (enemy.variant === EnemyVariant.Tank) {
           damage *= 0.6; 
       }
@@ -191,23 +188,25 @@ export class DamageSystem implements System {
       const finalDamage = Math.ceil(damage);
       enemy.health -= finalDamage;
       enemy.hitFlashTimer = 0.1; 
-      enemy.wobble = 0.4; // Visual impact
+      // Physics impulse handled in collision mostly, but let's add wobble
+      enemy.wobble = Math.min(0.8, enemy.wobble + 0.4); 
       projectile.hitEntityIds.push(enemy.id);
       
       // Spawn Juice
       this.spawnDamageNumber(state, enemy.position, finalDamage, isCrit);
-      this.spawnImpactParticles(state, projectile.position, enemy.color);
+      
+      // Hit Throttling for Particles
+      this.spawnImpactParticles(state, enemy, projectile.position, enemy.color);
       
       // Hitstop for Heavy Hits
       if (finalDamage > 50 || isCrit) {
-          state.hitStopTimer = 0.05; // 50ms freeze
-          state.screenshake.intensity = 2; // Micro shake
-          state.screenshake.decay = 0.5;
+          state.hitStopTimer = 0.05; 
+          state.addShake(2);
       }
       
       // SYNERGY: BULLET T2 - Apply Vulnerability
       if (projectile.isVulnerabilityShot) {
-          enemy.vulnerableTimer = 3.0; // 3 Seconds
+          enemy.vulnerableTimer = 3.0; 
           enemy.color = '#d946ef'; 
       }
 
@@ -218,10 +217,9 @@ export class DamageSystem implements System {
       // Handle Destruction / Pierce / Ricochet
       if (projectile.piercesRemaining > 0) {
           projectile.piercesRemaining--;
-          // Do NOT destroy, do NOT ricochet yet (usually piercing overrides ricochet until done)
       } else if (projectile.bouncesRemaining > 0) {
           this.handleRicochet(state, projectile, enemy);
-          projectile.active = false; // "Converted" to particle/new proj logic in handleRicochet
+          projectile.active = false; 
       } else {
           projectile.active = false;
       }
@@ -233,15 +231,13 @@ export class DamageSystem implements System {
 
       if (!player.active || !enemy.active) continue;
 
-      // IDENTITY: Phase Runner - Invulnerable Dash
       if (player.dashInvulnerable && player.isDashing) {
           continue; 
       }
 
       if (player.invulnerabilityTimer <= 0) {
         
-        // --- SHIELD LOGIC ---
-        // IDENTITY: Phase Runner - Shields Disabled check
+        // IDENTITY: Phase Runner
         if (player.currentShields > 0 && !player.shieldsDisabled) {
             this.breakShield(state, player);
             
@@ -253,7 +249,6 @@ export class DamageSystem implements System {
                 if (enemy.health <= 0) this.handleEnemyDeath(state, enemy);
             }
             
-            // Reactive Pulse
             if (player.reactivePulseOnHit) {
                 this.triggerReactivePulse(state, player);
             }
@@ -267,12 +262,10 @@ export class DamageSystem implements System {
                 enemy.knockback.x += dir.x * 800;
                 enemy.knockback.y += dir.y * 800;
             }
-            continue; // Damage negated
+            continue; 
         }
 
-        // --- DODGE LOGIC ---
         if (this.attemptDodge(player)) {
-            // Visual feedback?
             continue;
         }
 
@@ -280,7 +273,6 @@ export class DamageSystem implements System {
         const rawDamage = enemy.damage;
         let mitigation = player.damageReduction || 0;
         
-        // FORTRESS
         if (player.fortressTimer > 1.0) mitigation += 0.15; 
 
         const actualDamage = Math.max(1, rawDamage * (1 - mitigation));
@@ -289,8 +281,7 @@ export class DamageSystem implements System {
         player.invulnerabilityTimer = 0.35;
         player.hitFlashTimer = 0.2;
         
-        state.screenshake.intensity = 10;
-        state.screenshake.decay = 0.1;
+        state.addShake(10);
         
         // Reset Passive Regen
         if (player.synergyDefenseTier >= 2) player.shieldRegenTimer = 10.0;
@@ -333,20 +324,17 @@ export class DamageSystem implements System {
         const { player, projectile } = hit;
         if (!player.active || !projectile.active) continue;
 
-        // IDENTITY: Phase Runner - Invulnerable Dash
         if (player.dashInvulnerable && player.isDashing) {
             continue; 
         }
 
         if (player.invulnerabilityTimer <= 0) {
             
-            // IDENTITY: Phase Runner - Shields Disabled check
             if (player.currentShields > 0 && !player.shieldsDisabled) {
                 this.breakShield(state, player);
                 projectile.active = false; 
-                this.spawnImpactParticles(state, projectile.position, Colors.Shield);
+                this.spawnImpactParticles(state, enemyProjectileMock(projectile), projectile.position, Colors.Shield); // Mocking enemy entity for generic spawn function if needed, or overloading
                 
-                // Reactive Pulse
                 if (player.reactivePulseOnHit) this.triggerReactivePulse(state, player);
                 continue;
             }
@@ -359,7 +347,6 @@ export class DamageSystem implements System {
             const rawDamage = projectile.damage;
             let mitigation = player.damageReduction || 0;
             
-            // FORTRESS
             if (player.fortressTimer > 1.0) mitigation += 0.15; 
 
             const actualDamage = Math.max(1, rawDamage * (1 - mitigation));
@@ -368,17 +355,13 @@ export class DamageSystem implements System {
             player.invulnerabilityTimer = 0.35;
             player.hitFlashTimer = 0.2;
             
-            state.screenshake.intensity = 8;
-            state.screenshake.decay = 0.2;
+            state.addShake(8);
             
-            // Reset Passive Regen
             if (player.synergyDefenseTier >= 2) player.shieldRegenTimer = 10.0;
-            
-            // Reactive Pulse
             if (player.reactivePulseOnHit) this.triggerReactivePulse(state, player);
 
             projectile.active = false;
-            this.spawnImpactParticles(state, projectile.position, Colors.Player);
+            this.spawnImpactParticles(state, null, projectile.position, Colors.Player);
 
             if (player.health <= 0) {
                 player.health = 0;
@@ -397,10 +380,8 @@ export class DamageSystem implements System {
   }
 
   private attemptDodge(player: PlayerEntity): boolean {
-      // Synergy T5/9/Upgrade: Dodge Chance
       if (player.dodgeChance > 0) {
           if (Math.random() < player.dodgeChance) {
-              // Dodged!
               return true;
           }
       }
@@ -408,7 +389,6 @@ export class DamageSystem implements System {
   }
 
   private triggerReactivePulse(state: GameState, player: PlayerEntity) {
-      // Reuse Repulse Logic but smaller/weaker or scaled
       const PULSE_RADIUS = 200;
       const enemies = state.entityManager.getByType(EntityType.Enemy) as EnemyEntity[];
       
@@ -423,7 +403,6 @@ export class DamageSystem implements System {
                   enemy.knockback.x += (dx/mag) * force;
                   enemy.knockback.y += (dy/mag) * force;
                   
-                  // Damage?
                   const dmg = 10 * (player.repulseDamageMult || 1);
                   enemy.health -= dmg;
                   enemy.hitFlashTimer = 0.1;
@@ -437,16 +416,13 @@ export class DamageSystem implements System {
   private breakShield(state: GameState, player: PlayerEntity) {
       player.currentShields--;
       player.invulnerabilityTimer = 0.5;
-      player.shieldPopTimer = 0.2; // TRIGGER POP VISUAL
-      state.screenshake.intensity = 5;
-      state.screenshake.decay = 0.3;
+      player.shieldPopTimer = 0.2; 
+      state.addShake(5);
       
-      // SYNERGY: DEFENSE T2 - Reset passive regen on hit
       if (player.synergyDefenseTier >= 2) {
             player.shieldRegenTimer = 10.0;
       }
       
-      // SYNERGY: DEFENSE T1 - Shield break emits knockback pulse
       if (player.synergyDefenseTier >= 1 && player.currentShields === 0) {
           this.triggerReactivePulse(state, player);
       }
@@ -456,28 +432,31 @@ export class DamageSystem implements System {
       enemy.active = false;
       state.score += enemy.value;
       
-      // Visuals: Explosion
-      this.spawnExplosion(state, enemy.position, enemy.radius * 2, enemy.color);
+      // Visuals: Explosion with LOD
+      // Check budget
+      if (state.vfxState.deathBurstsThisSecond < VFX_BUDGET_DEATHS_PER_SEC) {
+          state.vfxState.deathBurstsThisSecond++;
+          this.spawnExplosion(state, enemy.position, enemy.radius * 2, enemy.color, true);
+      } else {
+          // Minimal fallback
+          this.spawnExplosion(state, enemy.position, enemy.radius * 2, enemy.color, false);
+      }
 
       // BOSS REWARDS
       if (enemy.variant === EnemyVariant.Boss) {
-          state.score += 5000; // Big payout
+          state.score += 5000; 
           state.runMetaCurrency += 200;
           state.runMetaXP += 1000;
-          state.screenshake.intensity = 20; // Massive shake
-          state.screenshake.decay = 0.05;
+          state.addShake(20);
       } else {
           this.grantMetaRewards(state, enemy);
       }
       
-      // SYNERGY: DEFENSE T5 - Heal on Kill
       if (state.player && state.player.synergyDefenseTier >= 5) {
           state.player.health = Math.min(state.player.maxHealth, state.player.health + 2);
       }
 
-      // UPGRADE: SIPHON
       if (state.player && state.player.shieldSiphonChance > 0) {
-          // Check shieldsDisabled
           if (state.player.currentShields < state.player.maxShields && !state.player.shieldsDisabled) {
               if (Math.random() < state.player.shieldSiphonChance) {
                   state.player.currentShields++;
@@ -487,7 +466,6 @@ export class DamageSystem implements System {
   }
 
   private grantMetaRewards(state: GameState, enemy: EnemyEntity) {
-      // Base rewards
       let currency = 1;
       let xp = 5;
 
@@ -502,10 +480,9 @@ export class DamageSystem implements System {
           xp = 12;
       }
 
-      // GATE: No currency before Wave 10. Small XP drip for morale.
       if (state.wave < 10) {
           currency = 0;
-          xp = Math.ceil(xp * 0.2); // 20% XP drip
+          xp = Math.ceil(xp * 0.2); 
       }
 
       state.runMetaCurrency += currency;
@@ -558,25 +535,18 @@ export class DamageSystem implements System {
           closest.wobble = 0.3;
           
           this.spawnDamageNumber(state, closest.position, appliedDamage, false);
-          this.spawnImpactParticles(state, closest.position, closest.color);
+          this.spawnImpactParticles(state, closest, closest.position, closest.color);
 
-          const particle: ParticleEntity = {
-              id: `part_rico_${Date.now()}_${Math.random()}`,
-              type: EntityType.Particle,
+          // Ricochet Trail needs to be prominent, so we always spawn it but maybe thinner
+          state.spawnParticle({
               style: 'ricochet_trail',
-              position: { ...currentSource.position }, 
-              velocity: { x: 0, y: 0 },
-              radius: 0,
-              rotation: 0,
+              position: { x: currentSource.position.x, y: currentSource.position.y },
               color: Colors.Projectile,
-              active: true,
-              from: { ...currentSource.position },
-              to: { ...closest.position },
-              lifetime: 0.15, 
-              maxLifetime: 0.15,
-              width: 2 
-          };
-          state.entityManager.add(particle);
+              lifetime: 0.15,
+              width: 2,
+              from: { x: currentSource.position.x, y: currentSource.position.y },
+              to: { x: closest.position.x, y: closest.position.y }
+          });
 
           if (closest.health <= 0) {
               this.handleEnemyDeath(state, closest);
@@ -585,7 +555,6 @@ export class DamageSystem implements System {
           hitIds.push(closest.id);
           currentSource = closest;
           
-          // Next iteration
           bounces--;
       }
   }
@@ -604,69 +573,78 @@ export class DamageSystem implements System {
       });
   }
 
-  private spawnImpactParticles(state: GameState, pos: Vector2, color: string) {
-      // Small sparks
-      for(let i=0; i<4; i++) {
+  private spawnImpactParticles(state: GameState, enemy: EnemyEntity | null, pos: Vector2, color: string) {
+      // 1. Throttling per Enemy
+      if (enemy) {
+          const now = state.gameTime;
+          const last = enemy.lastImpactTime || 0;
+          if (now - last < VFX_IMPACT_COOLDOWN) {
+              return; // Skip impact effect
+          }
+          enemy.lastImpactTime = now;
+      }
+
+      // 2. Projectile Load LOD
+      // If tons of projectiles are flying, reduce impact count drastically
+      const isHighLoad = state.activePlayerProjectileCount > VFX_LOD_PROJECTILE_THRESHOLD;
+      
+      // In high load, only 20% chance to spawn an impact spark at all if not throttled
+      if (isHighLoad) {
+          if (Math.random() > 0.2) return;
+      }
+
+      // 3. Spawn Count
+      const count = isHighLoad ? 1 : 3; 
+
+      for(let i=0; i<count; i++) {
           const speed = 100 + Math.random() * 100;
           const angle = Math.random() * Math.PI * 2;
-          const p: ParticleEntity = {
-              id: `spark_${Date.now()}_${i}_${Math.random()}`,
-              type: EntityType.Particle,
+          const vx = Math.cos(angle) * speed;
+          const vy = Math.sin(angle) * speed;
+          
+          state.spawnParticle({
               style: 'spark',
-              position: { ...pos },
-              velocity: { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed },
-              radius: 2 + Math.random(),
-              rotation: 0,
+              position: { x: pos.x, y: pos.y },
+              velocity: { x: vx, y: vy },
               color: color,
-              active: true,
-              from: pos, to: pos,
               lifetime: 0.2 + Math.random() * 0.2,
-              maxLifetime: 0.4,
+              radius: isHighLoad ? 1.5 : 2 + Math.random(),
               width: 0
-          };
-          state.entityManager.add(p);
+          });
       }
   }
 
-  private spawnExplosion(state: GameState, pos: Vector2, size: number, color: string) {
-      // Large expanding circle/debris
-      const p: ParticleEntity = {
-          id: `expl_${Date.now()}_${Math.random()}`,
-          type: EntityType.Particle,
+  private spawnExplosion(state: GameState, pos: Vector2, size: number, color: string, fullDetail: boolean) {
+      // Main Expanding Circle
+      state.spawnParticle({
           style: 'explosion',
-          position: { ...pos },
-          velocity: { x: 0, y: 0 },
-          radius: 1, // Grows over lifetime
-          rotation: 0,
+          position: { x: pos.x, y: pos.y },
           color: color,
-          active: true,
-          from: pos, to: pos,
           lifetime: 0.4,
-          maxLifetime: 0.4,
-          width: size // Max size encoded here
-      };
-      state.entityManager.add(p);
+          width: size 
+      });
 
-      // Debris
-      for(let i=0; i<8; i++) {
+      if (!fullDetail) return;
+
+      // Debris (Only for full detail)
+      for(let i=0; i<6; i++) {
           const speed = 50 + Math.random() * 150;
           const angle = Math.random() * Math.PI * 2;
-          const debris: ParticleEntity = {
-              id: `debris_${Date.now()}_${i}_${Math.random()}`,
-              type: EntityType.Particle,
-              style: 'spark', // Reuse spark logic for debris
-              position: { ...pos },
-              velocity: { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed },
-              radius: 3 + Math.random() * 2,
-              rotation: 0,
+          const vx = Math.cos(angle) * speed;
+          const vy = Math.sin(angle) * speed;
+          
+          state.spawnParticle({
+              style: 'spark', // Debris style
+              position: { x: pos.x, y: pos.y },
+              velocity: { x: vx, y: vy },
               color: color,
-              active: true,
-              from: pos, to: pos,
-              lifetime: 0.5 + Math.random() * 0.3,
-              maxLifetime: 0.8,
+              lifetime: 0.4 + Math.random() * 0.3,
+              radius: 3 + Math.random() * 2,
               width: 0
-          };
-          state.entityManager.add(debris);
+          });
       }
   }
 }
+
+// Helper mock for type safety if needed when enemy is null
+function enemyProjectileMock(p: ProjectileEntity): any { return null; }

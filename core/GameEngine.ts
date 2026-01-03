@@ -19,6 +19,7 @@ import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { ProgressionSystem } from '../systems/ProgressionSystem';
 import { WaveSystem } from '../systems/WaveSystem';
 import { MetaProgressionSystem } from '../systems/MetaProgressionSystem';
+import { ParticleSystem } from '../systems/ParticleSystem';
 
 type GameEventType = 'score_change' | 'game_over' | 'wave_change' | 'wave_progress' | 'player_health_change' | 'enemy_hit' | 'status_change' | 'wave_intro_timer' | 'boss_health_change';
 type GameEventListener = (data?: any) => void;
@@ -72,7 +73,8 @@ export class GameEngine {
       new ProjectileSystem(),  
       new EnemySystem(),       
       new CollisionSystem(),   
-      new DamageSystem(),      
+      new DamageSystem(),
+      new ParticleSystem(), // New System      
       this.upgradeSystem,      
       new ProgressionSystem()  
     ];
@@ -302,12 +304,25 @@ export class GameEngine {
       this.emit('status_change', this.state.status);
   }
 
+  giveFamilyUpgrades(family: string) {
+      this.upgradeSystem.maxOutFamily(this.state, family);
+      if (this.state.player) {
+          this.emit('player_health_change', { 
+                current: this.state.player.health, 
+                max: this.state.player.maxHealth,
+                shields: this.state.player.currentShields,
+                maxShields: this.state.player.maxShields 
+          });
+      }
+  }
+
   jumpToWave(targetWave: number) {
       if (targetWave < 1) return;
       this.state.entityManager.removeByType(EntityType.Enemy);
       this.state.entityManager.removeByType(EntityType.Projectile);
-      this.state.entityManager.removeByType(EntityType.Particle);
+      // Remove Hazards but NOT Particles (managed by pool now)
       this.state.entityManager.removeByType(EntityType.Hazard);
+      
       this.state.wave = targetWave - 1;
       this.waveSystem.prepareNextWave(this.state);
       if (this.state.player) {
@@ -411,18 +426,26 @@ export class GameEngine {
   private update(dt: number) {
     const input = this.inputManager.getState();
     
-    // 2. Update Screenshake (Always runs, even in pause/hitstop to decay)
+    // 0. Update Game Time & Performance Counters
+    this.state.gameTime += dt;
+    this.state.resetFrameStats();
+    this.state.updateVfxTimers(dt);
+
+    // 2. Update Screenshake
     if (this.state.screenshake.intensity > 0) {
         const { intensity, decay } = this.state.screenshake;
-        // Random offset based on intensity
-        this.state.screenshake.offset.x = (Math.random() - 0.5) * intensity;
-        this.state.screenshake.offset.y = (Math.random() - 0.5) * intensity;
+        // Exponential decay
+        this.state.screenshake.intensity = Math.max(0, intensity - (intensity * decay * dt));
+        // Clamp min
+        if (this.state.screenshake.intensity < 0.5) this.state.screenshake.intensity = 0;
         
-        // Decay
-        this.state.screenshake.intensity = Math.max(0, intensity - (dt * decay * 60));
-    } else {
-        this.state.screenshake.offset.x = 0;
-        this.state.screenshake.offset.y = 0;
+        if (this.state.screenshake.intensity > 0) {
+            this.state.screenshake.offset.x = (Math.random() - 0.5) * this.state.screenshake.intensity;
+            this.state.screenshake.offset.y = (Math.random() - 0.5) * this.state.screenshake.intensity;
+        } else {
+            this.state.screenshake.offset.x = 0;
+            this.state.screenshake.offset.y = 0;
+        }
     }
 
     // 3. Update Damage Numbers (Visuals update independent of hitstop)
@@ -539,7 +562,6 @@ export class GameEngine {
             const refund = damageTaken - actualDamage;
             if (refund > 0) {
                 player.health += refund;
-                // Clamp? Not strictly needed as we just subtracted.
             }
         }
     }
@@ -595,6 +617,7 @@ export class GameEngine {
     if (this.state.waveCleared) {
         this.state.entityManager.removeByType(EntityType.Projectile);
         this.state.entityManager.removeByType(EntityType.Hazard);
+        // Particles persist to look nice
 
         // HOOK: Wave Clear
         if (this.state.player && perkId) {
@@ -630,7 +653,7 @@ export class GameEngine {
       this.emit('score_change', this.state.score);
     }
     
-    const previousWave = 0; // Not tracked locally here properly but loop handles state.wave
+    const previousWave = 0; 
     
     let currentEnemiesRemaining = 0;
     if (this.state.waveActive) {

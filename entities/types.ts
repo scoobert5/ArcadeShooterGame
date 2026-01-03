@@ -7,7 +7,7 @@ export enum EntityType {
   Projectile = 'projectile',
   Particle = 'particle',
   Upgrade = 'upgrade',
-  Hazard = 'hazard' // New entity type for ground zones
+  Hazard = 'hazard' 
 }
 
 export enum UpgradeRarity {
@@ -15,7 +15,7 @@ export enum UpgradeRarity {
   Rare = 'rare',
   Epic = 'epic',
   Legendary = 'legendary',
-  Identity = 'identity' // One-time unique upgrades
+  Identity = 'identity'
 }
 
 export enum EnemyVariant {
@@ -23,11 +23,11 @@ export enum EnemyVariant {
   Fast = 'fast',
   Tank = 'tank',
   Boss = 'boss',
-  Shooter = 'shooter' // New Ranged Enemy
+  Shooter = 'shooter'
 }
 
 /**
- * Base properties shared by all entities in the game.
+ * Base properties shared by all entities.
  */
 export interface BaseEntity {
   id: string;
@@ -35,23 +35,23 @@ export interface BaseEntity {
   position: Vector2;
   velocity: Vector2;
   radius: number;
-  rotation: number; // Orientation in radians
+  rotation: number; 
   color: string;
-  active: boolean; // If false, the entity will be cleaned up by the engine
-  hitFlashTimer?: number; // Time in seconds to render the entity white (visual feedback)
+  active: boolean; 
+  hitFlashTimer?: number; 
 }
 
 export interface PlayerEntity extends BaseEntity {
   type: EntityType.Player;
   health: number;
   maxHealth: number;
-  cooldown: number; // Time until next shot
+  cooldown: number; 
   weaponLevel: number;
-  wantsToFire: boolean; // Input state for firing intent
-  invulnerabilityTimer: number; // Time in seconds until player can take damage again
+  wantsToFire: boolean; 
+  invulnerabilityTimer: number; 
   
   // VISUALS
-  recoil: Vector2; // Visual backward displacement when firing
+  recoil: Vector2; 
 
   // Reload & Ammo
   currentAmmo: number;
@@ -61,9 +61,9 @@ export interface PlayerEntity extends BaseEntity {
   maxReloadTime: number;
 
   // Ability: Repulse Pulse
-  repulseCooldown: number;     // Current timer
-  maxRepulseCooldown: number;  // Time to recharge
-  repulseVisualTimer: number;  // For rendering the pulse wave effect
+  repulseCooldown: number;     
+  maxRepulseCooldown: number;  
+  repulseVisualTimer: number;  
   
   // Ability Scaling
   repulseForceMult: number;
@@ -77,114 +77,100 @@ export interface PlayerEntity extends BaseEntity {
   dashCharges: number;
   maxDashCharges: number;
   isDashing: boolean;
-  dashDuration: number; // How long the velocity override lasts
+  dashDuration: number; 
   dashTimer: number;
-  dashTrailTimer: number; // Controls frequency of trail spawn
-  dashTrailDuration: number; // How long trail lasts (upgradeable)
-  dashTrailDamage: number;
-  dashFatigue: number; // 0 to 1, increases with rapid use
-  activeDashTrailId?: string; // ID of the currently forming dash trail
+  dashTrailTimer: number; 
+  dashTrailDuration: number; 
+  dashTrailDamage: number; 
+  dashFatigue: number; 
+  activeDashTrailId?: string; 
 
   // Shield Ability
   currentShields: number;
-  maxShields: number; // 0 means locked
-  shieldHitAnimTimer: number; // Visual pop for shield hit (Used for pop visual)
-  shieldPopTimer: number; // Dedicated timer for the burst effect
+  maxShields: number; 
+  shieldHitAnimTimer: number; 
+  shieldPopTimer: number; 
   
   // SYNERGY STATE
-  synergyBulletTier: number; // 0-10
-  synergyMobilityTier: number; // 0-10
-  synergyDefenseTier: number; // 0-10
+  synergyBulletTier: number; 
+  synergyMobilityTier: number; 
+  synergyDefenseTier: number; 
   
-  shotsFired: number; // Counter for Bullet Synergy
-  shieldRegenTimer: number; // Timer for Defense Synergy
+  shotsFired: number; 
+  shieldRegenTimer: number; 
 
-  // Offensive Stats & Burst Logic
-  projectileCount: number; // Number of projectiles fired per stream (Multi-Shot)
-  projectileStreams: number; // Number of streams (Split-Shot)
-  splitAngle: number; // Total arc in radians for split shot (0 = parallel)
-  ricochetBounces: number; // How many times projectiles bounce (Ricochet)
-  ricochetSearchRadius: number; // Max distance to look for next ricochet target
-  piercingCount: number; // Number of enemies a bullet can pass through
+  // Offensive Stats
+  projectileCount: number; 
+  projectileStreams: number; 
+  splitAngle: number; 
+  ricochetBounces: number; 
+  ricochetSearchRadius: number; 
+  piercingCount: number; 
   
-  // Multi-Shot Bursting
-  burstQueue: number; // How many shots left to fire in current burst
-  burstTimer: number; // Time until next burst shot
+  // Bursting
+  burstQueue: number; 
+  burstTimer: number; 
   
-  // Upgradable Stats
+  // Stats
   speed: number;
-  speedMultiplier: number; // Transient multiplier applied per frame (e.g. slows)
-  fireRate: number; // Seconds between shots
+  speedMultiplier: number; 
+  fireRate: number; 
   damage: number;
   
-  // Defensive Stats
-  damageReduction: number; // Percentage reduction (0.0 to 1.0)
-  waveHealRatio: number; // Percentage of MISSING health to heal (0.0 to 1.0)
-  thornsDamage: number; // Damage returned on hit
-  dodgeChance: number; // Chance to ignore damage (0.0 to 1.0)
-  reactivePulseOnHit: boolean; // Trigger pulse when hit
+  // Defensive
+  damageReduction: number; 
+  waveHealRatio: number; 
+  thornsDamage: number; 
+  dodgeChance: number; 
+  reactivePulseOnHit: boolean; 
   
-  // Mobility Mechanics
-  dashReloadAmount: number; // Ammo amount reloaded on dash
-  momentumDamageMult: number; // Damage multiplier based on speed
-  moveSpeedShieldRegen: boolean; // Regen shield faster while moving
-  postDashDamageBuff: number; // Multiplier for 1s after dash
-  postDashTimer: number; // Timer for buffs
+  // Mobility
+  dashReloadAmount: number; 
+  momentumDamageMult: number; 
+  moveSpeedShieldRegen: boolean; 
+  postDashDamageBuff: number; 
+  postDashTimer: number; 
   
-  // NEW MECHANICS (Phase 2 Expansion)
-  focusFireTarget?: string; // ID of enemy last hit
-  focusFireStacks: number; // Current bonus damage stacks
-  cullingThreshold: number; // HP% to execute/bonus damage
-  shieldSiphonChance: number; // Chance to regen shield on kill
-  fortressTimer: number; // How long player has been stationary
-  staticCharge: number; // Built up charge from movement
-  afterburnerEnabled: boolean; // Spawns fire trails on dash
-  nitroEnabled: boolean; // Converts speed to fire rate
+  // MECHANICS
+  focusFireTarget?: string; 
+  focusFireStacks: number; 
+  cullingThreshold: number; 
+  shieldSiphonChance: number; 
+  fortressTimer: number; 
+  staticCharge: number; 
+  afterburnerEnabled: boolean; 
+  nitroEnabled: boolean; 
 
-  // IDENTITY TRADE-OFFS
-  activeIdentityId?: string; // The ID of the single allowed Identity upgrade
-  ricochetEnabled: boolean; // Disabled by Focus Lock
-  shieldsDisabled: boolean; // Disabled by Phase Runner
-  dashInvulnerable: boolean; // Enabled by Phase Runner
-  fireRateMultMoving: number; // Reduced by Overclock Drive (< 1.0)
+  // IDENTITY
+  activeIdentityId?: string; 
+  ricochetEnabled: boolean; 
+  shieldsDisabled: boolean; 
+  dashInvulnerable: boolean; 
+  fireRateMultMoving: number; 
 
-  // Perk Flags
+  // Perks
   dashPrimePerWave: boolean;
   dashPrimeUsedThisWave: boolean;
   autoReloadPerk: boolean;
-  fieldPatchPerk: boolean;
 
-  // --- OPERATOR STARTING PACK STATE (Meta Phase 2 Refactor) ---
-  // Replaced individual boolean flags with pack-specific tracking fields
-  
-  // Kinetic Charger
+  // --- OPERATOR STARTING PACK STATE ---
   kineticTimer?: number;
   kineticReady?: boolean;
-  
-  // Armor Plating
   armorPlatingActive?: boolean;
-  
-  // Thruster Burst
-  thrusterBurstAvailable?: boolean; // Reset on wave start
-  
-  // Overclock Fuse
+  thrusterBurstAvailable?: boolean; 
   overclockTimer?: number;
-  baseFireRate?: number; // Snapshot for restoring/modifying
-  
-  // Targeting Uplink
+  baseFireRate?: number; 
   uplinkTimer?: number;
   uplinkActive?: boolean;
-  lastRotation?: number; // To track stability
-  
-  // Hazard Seals
+  lastRotation?: number; 
   hazardSealsRemaining?: number;
-  
-  // Scrap Injector
   scrapShieldAmount?: number;
   scrapShieldTimer?: number;
+  
+  // Just ensuring boolean for the perk flag if strict mode complains
+  fieldPatchPerk: boolean;
 }
 
-// Added 'telegraph_hazard' and 'spawn_hazard'
 export type BossAiState = 'approach' | 'commit' | 'anchor' | 'telegraph_slam' | 'slam' | 'telegraph_charge' | 'charge' | 'telegraph_hazard' | 'spawn_hazard' | 'recovery';
 
 export interface EnemyEntity extends BaseEntity {
@@ -192,71 +178,65 @@ export interface EnemyEntity extends BaseEntity {
   variant: EnemyVariant;
   health: number;
   maxHealth: number;
-  damage: number; // Damage dealt to player on contact
-  value: number;  // Score value when destroyed
+  damage: number; 
+  value: number;  
   
-  // Physics
-  knockback: Vector2; // Separate vector for attack impulse forces (decays over time)
-  
-  // Visuals
-  wobble: number; // Rotational shake intensity
+  knockback: Vector2; 
+  wobble: number; 
 
-  // AI Behavior State
   aiState: BossAiState; 
   aiStateTimer: number;
-  orbitDir: number; // 1 (CW) or -1 (CCW)
-  hasEnteredArena?: boolean; // Tracks if the enemy has fully entered the screen bounds
+  orbitDir: number; 
+  hasEnteredArena?: boolean; 
   
-  // Boss Specifics
   attackCooldown: number;
-  chargeVector?: Vector2; // Direction locked in for charge
+  chargeVector?: Vector2; 
   
-  // BOSS VULNERABILITY CYCLE
-  bossVulnTimer?: number;        // countdown in seconds
-  bossVulnIsActive?: boolean;    // true only during vulnerable phase
-  bossVulnNextDuration?: number; // stores current phase duration for clarity (optional)
+  bossVulnTimer?: number;        
+  bossVulnIsActive?: boolean;    
+  bossVulnNextDuration?: number; 
   
-  // Ranged & Boss Pulse Logic
   shootTimer?: number; 
-
-  // Status Effects
-  vulnerableTimer?: number; // Takes increased damage if > 0
+  vulnerableTimer?: number; 
+  
+  // PERFORMANCE
+  lastImpactTime?: number; // GameTime of last visual impact
 }
 
 export interface ProjectileEntity extends BaseEntity {
   type: EntityType.Projectile;
   damage: number;
-  lifetime: number; // Seconds remaining until despawn
-  maxLifetime: number; // Total lifetime at spawn
-  ownerId: string;  // ID of the entity that fired this projectile
-  isEnemyProjectile: boolean; // True if fired by an enemy (hurts player, ignored by enemies)
+  lifetime: number; 
+  maxLifetime: number; 
+  ownerId: string;  
+  isEnemyProjectile: boolean; 
   
-  // Visualization
   shape?: 'circle' | 'square' | 'diamond' | 'triangle';
 
-  // Ricochet & Pierce State
   bouncesRemaining: number;
-  piercesRemaining: number; // New: Number of enemies to pass through
-  ricochetSearchRadius: number; // Inherited from player at moment of firing
-  hitEntityIds: string[]; // Track which enemies have been hit to prevent bouncing back
+  piercesRemaining: number; 
+  ricochetSearchRadius: number; 
+  hitEntityIds: string[]; 
   
-  // Synergy Properties
-  isVulnerabilityShot?: boolean; // Applies vuln on hit
-  isRicochet?: boolean; // Is this a bounced projectile?
-  isTankShot?: boolean; // Is this a large tank projectile?
-  isStaticShot?: boolean; // Consumes static charge for AoE/Dmg
+  isVulnerabilityShot?: boolean; 
+  isRicochet?: boolean; 
+  isTankShot?: boolean; 
+  isStaticShot?: boolean; 
   
-  // Fragmentation Logic
-  age?: number; // Time alive
-  hasBurst?: boolean; // Has it fragmented yet?
-  isTankFragment?: boolean; // Is this a fragment?
+  age?: number; 
+  hasBurst?: boolean; 
+  isTankFragment?: boolean; 
+  
+  // --- NEW: Visual Trail (Ring Buffer) ---
+  trail: { x: number, y: number }[]; // Reused objects
+  trailHead: number; // Index of latest point
 }
 
 export interface ParticleEntity extends BaseEntity {
   type: EntityType.Particle;
   style: 'ricochet_trail' | 'spark' | 'impact' | 'muzzle' | 'explosion';
-  from: Vector2;
-  to: Vector2;
+  from: Vector2; // Reused
+  to: Vector2;   // Reused
   lifetime: number;
   maxLifetime: number;
   width: number;
@@ -267,14 +247,13 @@ export interface HazardEntity extends BaseEntity {
     damage: number;
     lifetime: number;
     maxLifetime: number;
-    tickTimer: number; // Controls damage tick rate
-    isPlayerOwned?: boolean; // For Dash Trails
-    style?: 'circle' | 'line'; // Visual style
-    from?: Vector2; // Start point for line style
-    to?: Vector2;   // End point for line style
+    tickTimer: number; 
+    isPlayerOwned?: boolean; 
+    style?: 'circle' | 'line'; 
+    from?: Vector2; 
+    to?: Vector2;   
 }
 
-// JUICE TYPES
 export interface DamageNumber {
     id: string;
     value: number;

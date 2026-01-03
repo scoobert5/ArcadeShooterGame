@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal } from 'lucide-react';
 
@@ -57,6 +58,21 @@ export const DevConsole: React.FC<DevConsoleProps> = ({ onCommand, onClose }) =>
         }
     }
     
+    // Command: giveallupgrade_FAMILY
+    const upgradeMatch = cmd.match(/^giveallupgrade_([a-z]+)$/);
+    if (upgradeMatch) {
+        const family = upgradeMatch[1];
+        if (family === 'bullets' || family === 'defense' || family === 'mobility') {
+            onCommand(cmd);
+            setInputValue('');
+            // onClose(); 
+            return;
+        } else {
+            setErrorMsg("Unknown family. Use: bullets, defense, or mobility.");
+            return;
+        }
+    }
+    
     // Command: openshop
     if (cmd === 'openshop') {
         onCommand(cmd);
@@ -65,8 +81,16 @@ export const DevConsole: React.FC<DevConsoleProps> = ({ onCommand, onClose }) =>
         return;
     }
 
+    // Command: debug
+    if (cmd === 'debug') {
+        onCommand(cmd);
+        setInputValue('');
+        onClose();
+        return;
+    }
+
     // Unknown command
-    setErrorMsg(`Unknown command: "${cmd}". Try "wave_10", "givescore_5000", or "openshop"`);
+    setErrorMsg(`Unknown command: "${cmd}". Try "wave_10", "givescore_5000", "giveallupgrade_bullets", "openshop", or "debug"`);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
